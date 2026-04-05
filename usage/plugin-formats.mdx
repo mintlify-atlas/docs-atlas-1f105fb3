@@ -1,0 +1,146 @@
+---
+title: "Plugin Formats"
+description: "Overview of the VST2, VST3, and CLAP plugin formats supported by yabridge, including output directories and bitbridge support for 32-bit plugins."
+---
+
+Yabridge seamlessly supports using both 32-bit and 64-bit Windows VST2, VST3, and CLAP plugins in 64-bit Linux plugin hosts as if they were native plugins.
+
+<Tabs>
+  <Tab title="VST2">
+    ## VST2 Plugins
+
+    VST2 plugins are distributed as `.dll` files and are typically installed into a `VSTPlugins` or `VSTPlugins` directory inside a Wine prefix. The most common location in the default Wine prefix is:
+
+    ```
+    C:\Program Files\Steinberg\VstPlugins
+    ```
+
+    which maps to the Linux path:
+
+    ```
+    ~/.wine/drive_c/Program Files/Steinberg/VstPlugins
+    ```
+
+    <Note>
+      This directory may be capitalized as `VSTPlugins` on your system. Some plugins also install themselves to a similar directory directly inside `Program Files`.
+    </Note>
+
+    To add the default VST2 directory to yabridge's management, run:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins"
+    ```
+
+    ### Output directory
+
+    After running `yabridgectl sync`, bridged VST2 plugins are placed in:
+
+    ```
+    ~/.vst/yabridge/
+    ```
+
+    Make sure your DAW searches `~/.vst` for VST2 plugins.
+
+    ### Multiple instances and inter-plugin communication
+
+    VST2 plugins that communicate between instances (for example, FabFilter Pro-Q 3, MMultiAnalyzer, and iZotope mixing plugins) must all be hosted within the same process for that functionality to work. This is done via [plugin groups](/configuration/plugin-groups).
+  </Tab>
+
+  <Tab title="VST3">
+    ## VST3 Plugins
+
+    VST3 plugins under Windows are **always** installed to:
+
+    ```
+    C:\Program Files\Common Files\VST3
+    ```
+
+    which maps to:
+
+    ```
+    ~/.wine/drive_c/Program Files/Common Files/VST3
+    ```
+
+    To add this directory to yabridge, run:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
+    ```
+
+    VST3 plugins are distributed as bundles (directories with a `.vst3` extension), and yabridge manages them as such.
+
+    ### Output directory
+
+    After running `yabridgectl sync`, bridged VST3 plugins are placed in:
+
+    ```
+    ~/.vst3/yabridge/
+    ```
+
+    Make sure your DAW searches `~/.vst3` for VST3 plugins.
+
+    ### Multiple instances
+
+    Multiple instances of a single VST3 plugin are **always** hosted in a single process by design — no extra configuration is needed. The only reason to use [plugin groups](/configuration/plugin-groups) with VST3 plugins is to get slightly lower loading times the first time a new plugin is loaded.
+  </Tab>
+
+  <Tab title="CLAP">
+    ## CLAP Plugins
+
+    CLAP plugins under Windows are **always** installed to:
+
+    ```
+    C:\Program Files\Common Files\CLAP
+    ```
+
+    which maps to:
+
+    ```
+    ~/.wine/drive_c/Program Files/Common Files/CLAP
+    ```
+
+    To add this directory to yabridge, run:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/CLAP"
+    ```
+
+    ### Output directory
+
+    After running `yabridgectl sync`, bridged CLAP plugins are placed in:
+
+    ```
+    ~/.clap/yabridge/
+    ```
+
+    Make sure your DAW searches `~/.clap` for CLAP plugins.
+
+    ### Multiple instances
+
+    Like VST3, multiple instances of a single CLAP plugin are **always** hosted in a single process by design. Plugin groups can still be used to reduce load times.
+  </Tab>
+</Tabs>
+
+## Bitbridge (32-bit plugins)
+
+Yabridge can also load 32-bit Windows plugins so you can use them in your 64-bit Linux DAW. Yabridge will **automatically detect** whether a plugin is 32-bit or 64-bit on startup and handle it accordingly — no extra configuration is required.
+
+<Warning>
+  If you have installed yabridge through a distro package, it is possible that your distro has disabled 32-bit bitbridge support. Check your distro's package documentation if you need to load 32-bit plugins.
+</Warning>
+
+<Note>
+  The bitbridge is not compatible with Wine's WoW64 build mode. If your Wine distribution does not ship a `wine64` binary, the bitbridge will likely not work.
+</Note>
+
+When the bitbridge is available, yabridge runs 32-bit plugins through a separate host binary (`yabridge-host-32.exe`) and bridges them transparently into the 64-bit Linux plugin host — the same way it handles 64-bit plugins.
+
+## Output Directory Summary
+
+| Format | Bridged plugin location |
+| ------ | ----------------------- |
+| VST2   | `~/.vst/yabridge/`      |
+| VST3   | `~/.vst3/yabridge/`     |
+| CLAP   | `~/.clap/yabridge/`     |
+
+After adding plugin directories with `yabridgectl add`, run `yabridgectl sync` to update the bridged plugins in these locations whenever you install or remove a plugin.

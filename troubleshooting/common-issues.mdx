@@ -1,0 +1,233 @@
+---
+title: "Common Issues"
+description: "Troubleshooting steps for the most frequently encountered problems when setting up and running yabridge."
+---
+
+This page covers general troubleshooting steps for common problems. For plugin-specific issues, see [Known Issues and Fixes](/troubleshooting/known-issues).
+
+If your problem is not listed here, feel free to post on the [issue tracker](https://github.com/robbert-vdh/yabridge/issues) or ask in the yabridge [Discord](https://discord.gg/pyNeweqadf).
+
+<AccordionGroup>
+  <Accordion title="Wine 9.22 and Wine 10.x don't work with yabridge">
+    Wine 9.22 and Wine 10.x currently don't work with yabridge. You will need to downgrade to Wine Staging 9.21.
+
+    See [issue #382](https://github.com/robbert-vdh/yabridge/issues/382) for details on the GUI problems introduced in Wine 9.22.
+
+    **On Debian, Ubuntu, Linux Mint, and other apt-based distros:**
+
+    ```shell
+    version=9.21
+    variant=staging
+    codename=$(shopt -s nullglob; awk '/^deb https:\/\/dl\.winehq\.org/ { print $3; exit 0 } END { exit 1 }' /etc/apt/sources.list /etc/apt/sources.list.d/*.list || awk '/^Suites:/ { print $2; exit }' /etc/apt/sources.list /etc/apt/sources.list.d/wine*.sources)
+    suffix=$(dpkg --compare-versions "$version" ge 6.1 && ((dpkg --compare-versions "$version" eq 6.17 && echo "-2") || echo "-1"))
+    sudo apt install --install-recommends {"winehq-$variant","wine-$variant","wine-$variant-amd64","wine-$variant-i386"}="$version~$codename$suffix"
+    ```
+
+    To prevent the package from being upgraded automatically:
+
+    ```shell
+    sudo apt-mark hold winehq-staging
+    ```
+
+    **On Arch and Manjaro:**
+
+    ```shell
+    sudo env DOWNGRADE_FROM_ALA=1 downgrade wine-staging
+    ```
+
+    Select Wine Staging 9.21 from the list. When asked whether to add it to `IgnorePkg`, select **yes** to prevent automatic updates.
+  </Accordion>
+
+  <Accordion title="Reading log output from your DAW">
+    Both yabridgectl and yabridge attempt to diagnose many common issues automatically. If you're running into crashes or other problems, launch your DAW from a terminal and read the log output for clues.
+
+    <Note>
+      Bitwig Studio writes plugin output to `~/.BitwigStudio/log/engine.log` rather than to the terminal. Check that file if you don't see relevant output in the terminal.
+    </Note>
+
+    For more detailed diagnostics and debug logging options, see the [Debugging](/development/debugging) page.
+  </Accordion>
+
+  <Accordion title="Testing with a clean Wine prefix">
+    A dirty or misconfigured Wine prefix can cause many hard-to-diagnose problems. When troubleshooting, always test with a clean prefix first.
+
+    **Option 1 — temporarily rename your default prefix:**
+
+    ```shell
+    mv ~/.wine ~/.wine.bak
+    ```
+
+    Restore it later with `mv ~/.wine.bak ~/.wine`.
+
+    **Option 2 — use a temporary prefix via environment variable:**
+
+    ```shell
+    export WINEPREFIX=~/wine-test
+    ```
+
+    <Warning>
+      Don't forget to unset `WINEPREFIX` before starting your DAW, or all plugins will use that prefix instead of their individually detected ones.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="WINEPREFIX is set and causing all plugins to use the wrong prefix">
+    If you have the `WINEPREFIX` environment variable set and you do *not* want all plugins to use that specific prefix, unset it:
+
+    ```shell
+    unset WINEPREFIX
+    ```
+
+    Yabridge will then automatically detect the correct Wine prefix for each plugin based on where its `.dll`, `.vst3`, or `.clap` file is located.
+  </Accordion>
+
+  <Accordion title="Warning about low RLIMIT_RTTIME value (200000 microseconds)">
+    This warning means your DAW is running in an environment where *rtkit* is active. Rtkit grants realtime scheduling privileges to applications but also imposes strict limits on what they can do.
+
+    **PipeWire (versions above 0.3.44):** Make sure your user has realtime privileges set up (see the memory locking section below), then reboot.
+
+    **GNOME 45+:** Recent GNOME shell versions use rtkit unconditionally. The only workaround is to mask the rtkit service after setting up realtime privileges:
+
+    ```shell
+    sudo systemctl mask rtkit-daemon.service
+    ```
+
+    Reboot after making this change. The warning should disappear.
+  </Accordion>
+
+  <Accordion title="Errors or warnings about memory locking limits">
+    Memory locking limit errors mean that realtime privileges have not been set up for your user. Setting the `memlock` limit to unlimited (or `-1`) is part of the realtime privileges setup process.
+
+    How to set this up depends on your distro:
+
+    **Arch and Manjaro:**
+
+    ```shell
+    sudo pacman -S realtime-privileges
+    sudo gpasswd -a "$USER" realtime
+    # Reboot after this
+    ```
+
+    **Fedora:**
+
+    ```shell
+    sudo dnf install realtime-setup
+    sudo gpasswd -a "$USER" realtime
+    # Reboot after this
+    ```
+
+    **Debian, Ubuntu, and derivatives:**
+
+    The `jackd2` package usually sets this up for the `audio` group. If `/etc/security/limits.d/audio.conf` exists:
+
+    ```shell
+    sudo usermod -aG audio "$USER"
+    # Reboot after this
+    ```
+
+    If that file doesn't exist, follow the [JACK realtime configuration guide](https://jackaudio.org/faq/linux_rt_config.html) to set it up manually.
+  </Accordion>
+
+  <Accordion title="Errors related to Wine version when running yabridgectl sync or loading plugins">
+    If you see Wine-related errors, your installed version of Wine may be too old for the version of yabridge you have compiled or installed. Yabridgectl checks for this automatically when you run `yabridgectl sync` after updating Wine or yabridge.
+
+    **To verify manually**, run the Wine plugin host binary directly (do *not* prefix it with `wine`):
+
+    ```shell
+    ~/.local/share/yabridge/yabridge-host.exe
+    ```
+
+    A working installation prints:
+
+    ```
+    Usage: yabridge-host.exe <plugin_type> <plugin_location> <endpoint_base_directory>
+    ```
+
+    **Error: `002b:err:module:__wine_process_init`**
+
+    Your Wine version is too old. Upgrade Wine — see the [WineHQ Ubuntu instructions](https://wiki.winehq.org/Ubuntu) or your distro's equivalent.
+
+    **Error: `0024:err:process:exec_process`**
+
+    Your Wine prefix is configured as 32-bit only and cannot run 64-bit applications like `yabridge-host.exe`. You will need to create a new 64-bit prefix.
+  </Accordion>
+
+  <Accordion title="Leftover Wine processes causing problems">
+    Stale Wine processes from a previous session can interfere with plugins. Kill all Wine-related processes for the current or default prefix with:
+
+    ```shell
+    wineserver -k
+    ```
+
+    <Warning>
+      This will terminate all running Wine processes in the prefix, including any plugin windows that are currently open.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Plugin windows show as a full-screen overlay covering everything">
+    If plugin windows appear as a large overlay over the entire screen — covering other windows and making it impossible to interact with anything without Alt+Tabbing — a winecfg setting is likely wrong.
+
+    **Fix:** Open `winecfg`, go to the **Graphics** tab, and make sure **Allow the window manager to control the windows** is checked.
+  </Accordion>
+
+  <Accordion title="Unable to load new plugins — Xorg 256 client limit">
+    If you're using a large number of plugins and can't load any new ones, you may be hitting Xorg's default limit of 256 clients.
+
+    **Check if this is the cause:**
+
+    ```shell
+    wine cmd.exe
+    ```
+
+    If this prints a message about the maximum number of clients being reached (or you can't open a terminal at all), you've hit the limit.
+
+    **Short-term workarounds:**
+
+    - Use [plugin groups](/configuration/plugin-groups) to run multiple instances of frequently used VST2 plugins in a single process.
+    - Switch to the VST3 or CLAP version of plugins where available — multiple instances of VST3/CLAP plugins always share a single process.
+
+    **Increasing the Xorg client limit:**
+
+    First, check what your current limit is:
+
+    ```shell
+    less /var/log/Xorg.0.log
+    # Search for "MaxClients"
+    ```
+
+    Check which values are supported on your system:
+
+    ```shell
+    /usr/lib/Xorg -maxclients 9999
+    # Output will list valid options: 64, 128, 256, 512, 1024 or 2048
+    ```
+
+    Create the Xorg config file (requires sudo):
+
+    ```
+    # /etc/X11/xorg.conf.d/99-maxclients.conf
+    Section "ServerFlags"
+        Option "MaxClients" "1024"
+    EndSection
+    ```
+
+    Reboot to apply. You can verify the new limit was applied by checking `/var/log/Xorg.0.log` again.
+  </Accordion>
+
+  <Accordion title="Using WINELOADER with a separate namespace">
+    If you're using a `WINELOADER` that runs the Wine process under a separate namespace while the host is not sandboxed, you'll need to disable yabridge's watchdog timer:
+
+    ```shell
+    export YABRIDGE_NO_WATCHDOG=1
+    ```
+
+    You may also want to set a custom directory for yabridge's sockets and other temporary files:
+
+    ```shell
+    export YABRIDGE_TEMP_DIR=/path/to/temp/dir
+    ```
+
+    <Note>
+      If you know what a separate namespace means in this context, you probably know what you're doing. These options are for advanced setups only.
+    </Note>
+  </Accordion>
+</AccordionGroup>

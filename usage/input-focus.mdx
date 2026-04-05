@@ -1,0 +1,41 @@
+---
+title: "Input Focus"
+description: "How yabridge manages keyboard input focus between plugin editors and the host DAW, and how to control which window receives keyboard input."
+---
+
+Yabridge tries to be clever about the way grabbing and releasing input focus for a plugin works.
+
+## How focus works
+
+When a plugin grabs input focus, yabridge always focuses the **parent window** that the host passed for the plugin to embed itself into — rather than the Wine window directly. This design has an important practical consequence: hosts like **Bitwig Studio** can still process common key bindings such as <kbd>Space</kbd> for play/pause even while you are actively interacting with a plugin's GUI.
+
+The downside of this approach is that in those hosts you simply cannot type a space character, because the key will always go to the host instead of the plugin.
+
+## Focusing the plugin editor directly
+
+For situations where you need all keyboard input to go directly to the plugin (and to Wine), you can hold down the <kbd>Shift</kbd> key while moving your mouse into the plugin's GUI. This focuses the plugin's editor window directly rather than the host's parent window.
+
+This is useful for:
+
+- Typing spaces in text fields in **Bitwig Studio**
+- Typing text into settings and license dialogs in **Voxengo** plugins
+- Navigating dropdown menus with the keyboard
+
+<Tip>
+  If you need to type a space or navigate with arrow keys inside a plugin while using Bitwig Studio, hold <kbd>Shift</kbd> when you move your mouse into the plugin editor. Release <kbd>Shift</kbd> once you're inside — the plugin editor will remain focused until you move the mouse out.
+</Tip>
+
+## Mouse enter/leave focus behavior
+
+Focus is managed based on where the mouse cursor is. Moving into a plugin's editor area grants focus to either the parent window (default) or directly to the plugin editor (when entering with <kbd>Shift</kbd> held). Moving the mouse out of the editor returns focus to the host.
+
+## REAPER considerations
+
+In **REAPER**, the plugin editor is embedded inside a larger FX window. This makes the focus boundary especially important: keyboard input goes to the host FX window by default, so use the <kbd>Shift</kbd>-entry trick if you need to interact with plugin text fields or keyboard-driven controls.
+
+## Summary
+
+| Behavior | How to achieve it |
+| -------- | ----------------- |
+| Host processes key bindings (e.g. <kbd>Space</kbd> for play) while plugin is open | Default behavior — just open the plugin normally |
+| All keyboard input goes to the plugin (e.g. for text entry) | Hold <kbd>Shift</kbd> while moving the mouse into the plugin editor |

@@ -1,0 +1,189 @@
+---
+title: "Building from Source"
+description: "How to compile yabridge from source, configure build options, and use a development build."
+---
+
+## Dependencies
+
+To compile yabridge, you'll need [Meson](https://mesonbuild.com/index.html) and the following system dependencies:
+
+| Dependency | Notes |
+| --- | --- |
+| **GCC 10+** | C++20 support is required |
+| **Wine** | Must include `winegcc`, `wineg++`, and Wine development headers |
+| **libxcb** | Required for X11 window embedding |
+| **Meson ≥ 0.56** | The build system used by yabridge |
+
+<Note>
+  Users on Debian, Ubuntu, Linux Mint, and Pop!\_OS should install Wine Staging from the [WineHQ repositories](https://wiki.winehq.org/Download). Distro-provided Wine packages may be too old.
+</Note>
+
+### Vendored dependencies
+
+The following libraries are included in the repository as Meson wraps and do not need to be installed separately:
+
+<AccordionGroup>
+  <Accordion title="Asio">
+    Asio is used as the IO context for the event loop and posting tasks to the main thread. Required version: ≥ 1.28.0.
+  </Accordion>
+  <Accordion title="bitsery">
+    Binary serialization library used for all IPC message passing over Unix domain sockets. Required version: ≥ 5.2.0.
+  </Accordion>
+  <Accordion title="function2">
+    An improved `std::function` replacement used internally. Required version: ≥ 4.0.0.
+  </Accordion>
+  <Accordion title="ghc::filesystem">
+    A `std::filesystem` compatibility shim. Required version: ≥ 1.5.0.
+  </Accordion>
+  <Accordion title="tomlplusplus">
+    Used to parse `yabridge.toml` configuration files. Required version: ≥ 3.4.0.
+  </Accordion>
+  <Accordion title="VST3 SDK 3.7.7">
+    A patched fork of the VST3 SDK that allows Winelib compilation. Patches are applied via `tools/patch-vst3-sdk.sh`.
+  </Accordion>
+  <Accordion title="CLAP headers 1.1.9">
+    The official CLAP plugin API headers. Required version: ≥ 1.1.7, \< 1.2.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Build commands
+
+<Steps>
+  <Step title="Configure the build directory">
+    Run `meson setup` with the Wine cross-compilation config file. The `cross-wine.conf` file configures `winegcc`/`wineg++` as the cross-compilers and sets the `-mwindows` linker flag for Wine host executables.
+
+    ```shell
+    meson setup build --buildtype=release --cross-file=cross-wine.conf --unity=on --unity-size=1000
+    ```
+
+    **Unity build flags explained:**
+
+    | Flag | Description |
+    | --- | --- |
+    | `--unity=on` | Enables unity (jumbo) builds, combining multiple translation units to speed up compilation |
+    | `--unity-size=1000` | Number of source files combined per unity file. Lower this (e.g. `--unity-size=100`) if the build runs out of RAM |
+
+    To disable unity builds entirely (slower but uses less RAM):
+
+    ```shell
+    meson setup build --buildtype=release --cross-file=cross-wine.conf
+    ```
+  </Step>
+  <Step title="Compile">
+    ```shell
+    ninja -C build
+    ```
+  </Step>
+  <Step title="Set up yabridge">
+    After building, follow the [quick start guide](/quickstart) to configure yabridge with `yabridgectl`.
+  </Step>
+</Steps>
+
+<Warning>
+  You **must** pass `--cross-file=cross-wine.conf`. Without it, Meson will not configure `winegcc`/`wineg++` as the cross-compiler for the Wine host binaries, and the build will fail.
+</Warning>
+
+---
+
+## Build options
+
+Build options are defined in `meson_options.txt` and can be passed to `meson setup` with `-D<option>=<value>`, or changed on an existing build directory with `meson configure build -D<option>=<value>`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `bitbridge` | boolean | `false` | Build a 32-bit host application (`yabridge-host-32.exe`) for hosting 32-bit plugins. See [32-bit bitbridge](#32-bit-bitbridge) below. |
+| `clap` | boolean | `true` | Build the CLAP version of yabridge (`libyabridge-clap.so` and its chainloader). |
+| `vst3` | boolean | `true` | Build the VST3 version of yabridge (`libyabridge-vst3.so` and its chainloader). |
+| `winedbg` | boolean | `false` | Run the Wine plugin host with GDB attached via Wine's winedbg GDB proxy. See [Attaching a debugger](/development/debugging#attaching-a-debugger). |
+
+### Examples
+
+```shell
+# Disable VST3 support (useful when building against older Wine < 5.7)
+meson setup build --buildtype=release --cross-file=cross-wine.conf -Dvst3=false
+
+# Enable the bitbridge and winedbg in an existing build directory
+meson configure build -Dbitbridge=true -Dwinedbg=true -Dbuildtype=debug
+ninja -C build
+```
+
+---
+
+## 32-bit bitbridge
+
+Yabridge can act as a bitbridge to load legacy 32-bit Windows plugins (such as old SynthEdit plugins) in a modern 64-bit Linux DAW. When enabled, yabridge will automatically detect whether a plugin is 32-bit or 64-bit and launch the appropriate host executable (`yabridge-host.exe` or `yabridge-host-32.exe`).
+
+<Warning>
+  The bitbridge is **not compatible** with Wine's new WoW64 build mode ([Wine bug #58377](https://bugs.winehq.org/show_bug.cgi?id=58377)). If your Wine installation does not ship a `wine64` binary, the bitbridge will likely not work.
+</Warning>
+
+### Requirements
+
+- The 32-bit version of libxcb must be installed (multilib packages on your distro).
+- Wine must support running 32-bit Windows executables (not WoW64-only builds).
+
+### Building with bitbridge enabled
+
+<Tabs>
+  <Tab title="New build">
+    ```shell
+    meson setup build --buildtype=release --cross-file=cross-wine.conf -Dbitbridge=true
+    ninja -C build
+    ```
+  </Tab>
+  <Tab title="Existing build">
+    ```shell
+    meson configure build -Dbitbridge=true
+    ninja -C build
+    ```
+  </Tab>
+</Tabs>
+
+This produces a second host binary, `yabridge-host-32.exe`, alongside the regular `yabridge-host.exe`. Yabridge selects between them automatically based on the plugin's architecture.
+
+---
+
+## Installing a development build
+
+If you want to test a locally built version of yabridge:
+
+<Tabs>
+  <Tab title="Arch / Manjaro">
+    Install the [yabridge-git](https://aur.archlinux.org/packages/yabridge-git/) and [yabridgectl-git](https://aur.archlinux.org/packages/yabridgectl-git/) AUR packages to track the latest `master` branch automatically.
+  </Tab>
+  <Tab title="GitHub Actions (any distro)">
+    Development builds for every commit on `master` are available on the [automated builds page](https://github.com/robbert-vdh/yabridge/actions?query=workflow%3A%22Automated+builds%22+branch%3Amaster) (requires a GitHub login), or without login at [nightly.link](https://nightly.link/robbert-vdh/yabridge/workflows/build/master).
+
+    <Steps>
+      <Step title="Download and extract">
+        Download the archive and extract it twice (GitHub wraps the tarball in a `.zip`).
+      </Step>
+      <Step title="Replace existing files">
+        Overwrite the files in `~/.local/share/yabridge/` with the contents of the `yabridge/` directory from the archive, and replace `~/.local/share/yabridge/yabridgectl` with the new `yabridgectl/yabridgectl` binary.
+      </Step>
+      <Step title="Re-sync plugins">
+        ```shell
+        yabridgectl sync
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      If you installed yabridge from a distro package, remove it first to avoid conflicts before replacing files manually.
+    </Note>
+  </Tab>
+  <Tab title="From source build">
+    After building with `ninja -C build`, you can point yabridge at the build directory by adding it to your `PATH` so the DAW can find the `yabridge-*.exe` binaries:
+
+    ```shell
+    # Add to your login shell profile (e.g. ~/.bash_profile or ~/.profile)
+    export PATH="$PATH:/path/to/yabridge/build"
+    ```
+
+    Then run `yabridgectl sync` to re-link the plugin libraries.
+  </Tab>
+</Tabs>
+
+After updating yabridge's files in any of the above ways, always re-run `yabridgectl sync` to complete the upgrade.

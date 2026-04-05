@@ -1,0 +1,222 @@
+---
+title: "Known Issues and Fixes"
+description: "Plugin-specific issues, workarounds, and known limitations when using Windows plugins through yabridge."
+---
+
+Any plugin should function out of the box, although some plugins will need additional dependencies or configuration tweaks for their GUIs to work correctly. This page covers plugin-specific problems and known caveats.
+
+<Note>
+  Also check the [Common Issues](/troubleshooting/common-issues) page for general troubleshooting steps not specific to a particular plugin.
+</Note>
+
+## Plugin-specific issues
+
+<AccordionGroup>
+  <Accordion title="Missing, invisible, or misaligned text">
+    Install `corefonts` or `allfonts` through `winetricks`:
+
+    ```shell
+    winetricks corefonts
+    # or for more complete font coverage
+    winetricks allfonts
+    ```
+
+    This covers the majority of plugins that render text incorrectly under Wine.
+  </Accordion>
+
+  <Accordion title="GUI never updates when you interact with it (many JUCE-based plugins)">
+    Many recent JUCE-based plugins no longer redraw when using WineD3D. Install [DXVK](https://github.com/doitsujin/dxvk) to fix this.
+
+    <Warning>
+      Make sure you also install Vulkan drivers if you haven't already. DXVK requires Vulkan to function.
+    </Warning>
+
+    You can install DXVK into your Wine prefix with:
+
+    ```shell
+    winetricks dxvk
+    ```
+  </Accordion>
+
+  <Accordion title="Serum — GUI issues and crashes">
+    Serum requires two changes to work correctly under Wine:
+
+    1. Disable `d2d1.dll` in `winecfg` (Libraries tab → add `d2d1` → set to "Disabled")
+    2. Install `gdiplus` through `winetricks`:
+
+    ```shell
+    winetricks gdiplus
+    ```
+
+    You may also want to disable tooltips inside Serum itself: go to the global settings tab, uncheck **Show help tooltips**, and click the save icon next to **Preferences**.
+  </Accordion>
+
+  <Accordion title="Native Instruments — Native Access and installation failures">
+    Native Instruments plugins work, but the latest version of Native Access needs extra steps to run under Wine. See the [WineHQ application page](https://appdb.winehq.org/objectManager.php?sClass=version&iId=41820) for instructions.
+
+    **Using the legacy Native Access 1.X installer:**
+
+    The legacy version 1.X can be installed directly. Find it on the [Native Instruments legacy installers page](https://support.native-instruments.com/hc/en-us/articles/360000407909-Native-Access-1-Legacy-Installers-for-Older-Operating-Systems). Before running the installer, open `winecfg` and set the reported Windows version to **Windows 10** — otherwise the installer will stall while trying to install an ISO driver.
+
+    **Mounting .iso files with hidden files:**
+
+    Some plugins or sound libraries will show an *Error while mounting disk image* failure. The `.iso` file downloaded to your downloads directory needs to be mounted with special options to unhide files that the installer depends on:
+
+    ```shell
+    # Load the .iso as a loop device (note the loop device printed, e.g. /dev/loop0)
+    udisksctl loop-setup -f ~/Downloads/<filename>.iso
+
+    # Mount it with udf and unhide options
+    udisksctl mount -t udf -o unhide -b /dev/loopX
+    ```
+
+    Replace `/dev/loopX` with the device printed by `loop-setup`. The `.iso` will be mounted to a directory under `/run/media`.
+
+    **If you get `Mount option 'unhide' is not allowed`:**
+
+    On older distros you may need to create or edit `/etc/udisks2/mount_options.conf` and add:
+
+    ```conf
+    [defaults]
+    udf_allow=uid=$UID,gid=$GID,iocharset,utf8,umask,mode,dmode,unhide,undelete
+    ```
+  </Accordion>
+
+  <Accordion title="Spitfire Audio (BBC Symphony Orchestra, LABS) — sample library errors">
+    If Spitfire Audio plugins show an *Error #X: Something went wrong* message and fail to load their sample libraries, reinstall those plugins into a new, clean Wine prefix.
+
+    <Warning>
+      Before creating a clean prefix, uninstall the Spitfire software along with any VST2 and VST3 plugins from your main Wine prefix first to avoid confusion.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="JUCE plugins — disappearing mouse cursor">
+    Several JUCE-based plugins have an issue under Wine where the mouse cursor disappears after interacting with certain UI elements.
+
+    **Fix:** Mouse over the resize handle in the bottom right corner of the plugin window. This forces the cursor to reappear.
+  </Accordion>
+
+  <Accordion title="Arturia, Kick 2 (Sonic Academy), The Drop (Cytomic) — GUI freezes on tooltip">
+    These JUCE-based plugins freeze their GUI when attempting to display a tooltip.
+
+    **Fix:** Enable the **Hide Wine version from applications** option in the Staging tab of `winecfg`.
+
+    <Tip>
+      If a plugin functions normally but freezes when you click on something, this is almost always the cause. Try enabling this option first.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Sforzando — GUI not responding to mouse clicks">
+    The Sforzando GUI may appear unresponsive to mouse clicks depending on your Wine and system configuration. This is actually a redrawing issue — the GUI is still being updated even if it does not appear that way.
+
+    **Fix:** Drag the window around or click anywhere in the GUI to force a redraw.
+  </Accordion>
+
+  <Accordion title="MeldaProduction — missing redraws and incorrect positioning">
+    MeldaProduction plugins have minor rendering issues when GPU acceleration is enabled, including missing redraws and incorrect positioning when the window is dragged offscreen on the top and left sides of the screen.
+
+    **Fix:** Disable GPU acceleration in the plugin's own settings.
+  </Accordion>
+
+  <Accordion title="Tokyo Dawn Records — knobs not behaving correctly when dragging">
+    Knobs in Tokyo Dawn Records plugins may not respond as expected when dragging long distances.
+
+    **Fix:** Set the **Continuous Drag** option in the plugin's options to **Linear**.
+  </Accordion>
+
+  <Accordion title="Voxengo — knob behavior">
+    Knobs in Voxengo plugins behave better with a specific setting enabled.
+
+    **Fix:** Enable the **Radial knob mode** setting in Voxengo's global settings.
+
+    <Note>
+      When you need to type text into settings or license dialogs in Voxengo plugins, hold down Shift while entering the plugin's GUI with your mouse. This directs all keyboard input to Wine rather than your DAW.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Scaler 2 — interface lags, blacks out, or renders poorly">
+    If Scaler 2's interface lags, blacks out, or otherwise renders incorrectly, try enabling [software rendering](https://forum.scalerplugin.com/t/scaler-2-black-empty-window/3540/8) in Scaler 2's settings.
+  </Accordion>
+
+  <Accordion title="ujam plugins and LoopCloud (Gorilla Engine) — JS_EXEC_FAILED error">
+    Plugins built with the Gorilla Engine, including **ujam** plugins and **LoopCloud** plugins, throw a `JS_EXEC_FAILED` error when loading.
+
+    **Fix:** Enable the `disable_pipes` [compatibility option](/configuration/compatibility-options) for those plugins in `yabridge.toml`:
+
+    ```toml
+    ["Loopcloud*"]
+    disable_pipes = true
+    ```
+  </Accordion>
+
+  <Accordion title="KiloHearts — file descriptor leaks with esync">
+    KiloHearts plugins have file descriptor leaks when *esync* is enabled. Over time Wine and yabridge will stop working after the system hits the open file limit.
+
+    **Fix:** Either unset `WINEESYNC` while using yabridge, or switch to [fsync](/troubleshooting/performance#wine-with-fsynccfutex2) instead, which does not have this problem.
+  </Accordion>
+
+  <Accordion title="PSPaudioware (E27) and Soundtoys (Crystallizer) — GUI appears in wrong location after expanding">
+    These plugins with expandable GUIs may render their GUI in the wrong location after the GUI has been expanded.
+
+    **Fix:** Enable the `editor_coordinate_hack` [compatibility option](/configuration/compatibility-options) in `yabridge.toml`:
+
+    ```toml
+    ["PSPaudioware"]
+    editor_coordinate_hack = true
+    ```
+  </Accordion>
+
+  <Accordion title="Chromaphone 3 + Bitwig Studio — text entry crashes the plugin">
+    When using Applied Acoustics' Chromaphone 3 under Bitwig Studio, typing text causes the plugin to crash. Chromaphone uses a different text entry method when it detects Bitwig.
+
+    **Fix:** Enable the `hide_daw` [compatibility option](/configuration/compatibility-options) in `yabridge.toml`:
+
+    ```toml
+    ["Chromaphone 3.so"]
+    hide_daw = true
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Known caveats
+
+The following issues are limitations of Wine or the plugin authorization systems themselves. There are no known workarounds.
+
+<AccordionGroup>
+  <Accordion title="iZotope plugins cannot be authorized">
+    iZotope plugins cannot be authorized due to missing functionality in Wine's `crypt32` implementation. This is a Wine limitation with no known workaround.
+
+    <Note>
+      Inter-plugin communication between multiple instances of iZotope mixing plugins (e.g. Neutron, Insight) does work — you just need to configure [plugin groups](/configuration/plugin-groups) to host them in a single process.
+    </Note>
+  </Accordion>
+
+  <Accordion title="D16 Group plugins cannot be authorized">
+    D16 Group plugins cannot recall their authorization status correctly in current versions of Wine, making it impossible to authorize them.
+  </Accordion>
+
+  <Accordion title="Waves V13 VST3 — random crashes due to memory issues">
+    Waves V13 VST3 plugins have memory issues under Wine and will likely crash randomly at some point.
+
+    **Workaround:** Try the V12 versions of the plugins if you still have a license for them.
+
+    <Warning>
+      If you can avoid Waves entirely, that would be for the best. The V13 VST3 plugins are not reliable under Wine.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="MIDI key labels not updated after initial query (VST2)">
+    MIDI key labels for VST2 plugins — commonly used for drum machines and multisamplers — will not be updated after the host first requests them. This is a VST 2.4 limitation: the protocol has no way for a plugin to notify the host that labels have changed.
+
+    **Workaround:** Deactivate and reactivate the plugin. This causes the host to re-query the labels for the current patch.
+  </Accordion>
+
+  <Accordion title="Cinnamon desktop — flickering and rendering issues">
+    The Cinnamon desktop environment has quirks with its window management that affect yabridge's plugin editor embedding:
+
+    - Some plugins may flicker while dragging windows around.
+    - There may be [rendering issues](https://github.com/robbert-vdh/yabridge/issues/89) when using multiple monitors, depending on which screen is set as primary.
+
+    **Partial workaround:** Enabling the `editor_xembed` [compatibility option](/configuration/compatibility-options) may help, but Wine's XEmbed implementation also introduces its own rendering issues.
+  </Accordion>
+</AccordionGroup>

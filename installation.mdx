@@ -1,0 +1,153 @@
+---
+title: "Installation"
+description: "Install yabridge and yabridgectl on your Linux distribution using your package manager or the prebuilt binary archive."
+---
+
+## Prerequisites
+
+yabridge requires a recent version of Wine Staging. Older Wine versions may not work correctly.
+
+<Warning>
+  Users of **Debian**, **Ubuntu**, **Linux Mint**, and **Pop!\_OS** should install Wine Staging from the [WineHQ repositories](https://wiki.winehq.org/Download). The Wine versions provided by those distros' own repositories are often too old to be used with yabridge.
+</Warning>
+
+On other distros, install `wine-staging` using your distro's package manager.
+
+For a general overview on how to use Wine to install Windows applications, see the [Wine User's Guide](https://wiki.winehq.org/Wine_User%27s_Guide#Using_Wine).
+
+## Install yabridge and yabridgectl
+
+<Tabs>
+  <Tab title="Arch / Manjaro">
+    yabridge and yabridgectl are available from the official multilib repositories:
+
+    ```bash
+    sudo pacman -S yabridge yabridgectl
+    ```
+
+    This installs the [`yabridge`](https://archlinux.org/packages/multilib/x86_64/yabridge/) and [`yabridgectl`](https://archlinux.org/packages/multilib/x86_64/yabridgectl/) packages.
+
+    <Note>
+      The Arch packages may not always be on the latest release. For the very latest version, see the development build instructions below.
+    </Note>
+  </Tab>
+  <Tab title="Fedora">
+    Install yabridge and yabridgectl from the [COPR repository](https://copr.fedorainfracloud.org/coprs/patrickl/wine-tkg/):
+
+    ```bash
+    sudo dnf copr enable patrickl/wine-tkg
+    sudo dnf install yabridge yabridgectl
+    ```
+  </Tab>
+  <Tab title="OpenSUSE">
+    yabridge and yabridgectl are packaged by [GeekosDAW](https://geekosdaw.tuxfamily.org/en/). Follow the instructions on that page to add the repository and install the packages.
+  </Tab>
+  <Tab title="NixOS">
+    yabridge and yabridgectl are available in the NixOS repositories. Add them to your configuration or install them in a shell:
+
+    ```bash
+    nix-shell -p yabridge yabridgectl
+    ```
+  </Tab>
+  <Tab title="Ubuntu / Debian / others">
+    Download and install a prebuilt binary archive from the GitHub releases page.
+
+    **Step 1:** Download the latest release archive from the [GitHub releases page](https://github.com/robbert-vdh/yabridge/releases). The prebuilt binaries target Ubuntu 20.04 and should work on any distro newer than that.
+
+    **Step 2:** Extract the archive to `~/.local/share`:
+
+    ```bash
+    tar -C ~/.local/share -xavf yabridge-x.y.z.tar.gz
+    ```
+
+    After extracting, verify that `~/.local/share/yabridge/yabridgectl` exists.
+
+    <Note>
+      If you are extracting using a GUI file manager or archive tool, make sure hidden files and directories are visible (press `Ctrl+H`). Also verify that your archive tool did not create an extra subdirectory inside `~/.local/share`. Dragging the `yabridge` directory from the archive directly to `~/.local/share` is the safest approach.
+    </Note>
+
+    **Step 3:** Add yabridge to your `PATH` so you can run `yabridgectl` directly:
+
+    ```bash
+    echo 'export PATH="$PATH:$HOME/.local/share/yabridge"' >> ~/.bashrc
+    ```
+
+    Reopen your terminal after making this change.
+
+    Alternatively, wherever the documentation says to run `yabridgectl <something>`, you can run `~/.local/share/yabridge/yabridgectl <something>` instead.
+  </Tab>
+</Tabs>
+
+## Installing a development build
+
+If you want to try the latest unreleased version of yabridge:
+
+<Tabs>
+  <Tab title="Arch / Manjaro">
+    Install the AUR packages for the latest `master` branch:
+
+    ```bash
+    yay -S yabridge-git yabridgectl-git
+    ```
+
+    Or use your preferred AUR helper with [`yabridge-git`](https://aur.archlinux.org/packages/yabridge-git/) and [`yabridgectl-git`](https://aur.archlinux.org/packages/yabridgectl-git/).
+  </Tab>
+  <Tab title="Other distros">
+    Development builds are available on the [automated build page](https://github.com/robbert-vdh/yabridge/actions?query=workflow%3A%22Automated+builds%22+branch%3Amaster). You need to be logged into GitHub to download artifacts there. Alternatively, the [nightly.link page](https://nightly.link/robbert-vdh/yabridge/workflows/build/master) provides the latest build without requiring a login.
+
+    1. Download the latest yabridge and yabridgectl binaries that match your system.
+    2. Extract the files twice — GitHub wraps the tarball inside a `.zip` archive.
+    3. Overwrite the existing files in `~/.local/share/yabridge` with those from the `yabridge` directory.
+    4. Replace `~/.local/share/yabridge/yabridgectl` with the new `yabridgectl/yabridgectl` binary.
+
+    If you are currently using a distro package, remove it first to avoid conflicts before switching to a manual binary installation.
+
+    After updating, run `yabridgectl sync` to finish the upgrade.
+  </Tab>
+</Tabs>
+
+## Downgrading Wine
+
+If a plugin does not work correctly with the current version of Wine Staging, you may need to downgrade to an earlier version.
+
+<Tabs>
+  <Tab title="Debian / Ubuntu / Mint (apt)">
+    After adding the WineHQ repositories, use the commands below to install a specific version of Wine Staging. This example installs version 9.21 — change `version` to whichever version you need:
+
+    ```bash
+    version=9.21
+    variant=staging
+    codename=$(shopt -s nullglob; awk '/^deb https:\/\/dl\.winehq\.org/ { print $3; exit 0 } END { exit 1 }' /etc/apt/sources.list /etc/apt/sources.list.d/*.list || awk '/^Suites:/ { print $2; exit }' /etc/apt/sources.list /etc/apt/sources.list.d/wine*.sources)
+    suffix=$(dpkg --compare-versions "$version" ge 6.1 && ((dpkg --compare-versions "$version" eq 6.17 && echo "-2") || echo "-1"))
+    sudo apt install --install-recommends {"winehq-$variant","wine-$variant","wine-$variant-amd64","wine-$variant-i386"}="$version~$codename$suffix"
+    ```
+
+    To prevent these packages from being updated automatically:
+
+    ```bash
+    sudo apt-mark hold winehq-staging
+    ```
+
+    Run the same command with `unhold` instead of `hold` to re-enable updates.
+  </Tab>
+  <Tab title="Arch / Manjaro">
+    Install the [`downgrade`](https://aur.archlinux.org/packages/downgrade/) tool, then run:
+
+    ```bash
+    sudo env DOWNGRADE_FROM_ALA=1 downgrade wine-staging
+    ```
+
+    Select the version you want from the list. When prompted, you can add the package to `IgnorePkg` in `/etc/pacman.conf` to prevent automatic updates.
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Add your plugin directories and run your first sync.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration/yabridge-toml">
+    Configure per-plugin options with yabridge.toml.
+  </Card>
+</CardGroup>

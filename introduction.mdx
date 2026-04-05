@@ -1,0 +1,86 @@
+---
+title: "Introduction"
+description: "A modern Wine plugin bridge for using Windows VST2, VST3, and CLAP plugins on Linux as if they were native plugins."
+---
+
+yabridge seamlessly supports using both 32-bit and 64-bit Windows VST2, VST3, and CLAP plugins in 64-bit Linux plugin hosts as if they were native plugins. Its modern concurrent architecture and focus on transparency allows yabridge to be both fast and highly compatible, while also staying easy to debug and maintain.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="All major plugin formats" icon="plug">
+    Full support for VST2, VST3, and CLAP plugins — including 32-bit plugins via the built-in bitbridge.
+  </Card>
+  <Card title="Modern concurrent architecture" icon="bolt">
+    Uses Unix domain sockets and shared memory audio buffers for near-native performance with minimal latency overhead.
+  </Card>
+  <Card title="Plugin groups" icon="layer-group">
+    Host multiple plugins in a single process for inter-plugin communication (e.g. FabFilter Pro-Q 3, iZotope) and faster load times.
+  </Card>
+  <Card title="Transparency and debuggability" icon="magnifying-glass">
+    Prints the active configuration, matched options, and Wine output so issues are easy to diagnose.
+  </Card>
+  <Card title="Bidirectional drag-and-drop" icon="hand-pointer">
+    Drag files from native X11 applications into plugin windows, and from plugin windows back to your DAW or file browser.
+  </Card>
+  <Card title="Per-plugin configuration" icon="file-code">
+    Fine-grained compatibility options via `yabridge.toml` with glob pattern matching to target individual plugins or entire directories.
+  </Card>
+</CardGroup>
+
+## Plugin formats
+
+yabridge bridges all three major Windows plugin formats into their Linux equivalents:
+
+| Format | Windows plugin | Linux output location |
+|--------|----------------|-----------------------|
+| VST2   | `.dll`         | `~/.vst/yabridge`     |
+| VST3   | `.vst3`        | `~/.vst3/yabridge`    |
+| CLAP   | `.clap`        | `~/.clap/yabridge`    |
+
+### 32-bit support via bitbridge
+
+yabridge can also load 32-bit Windows plugins in your 64-bit Linux DAW. It automatically detects whether a plugin is 32-bit or 64-bit on startup and handles it accordingly. If you installed yabridge from a distro package, your distro may have disabled this feature — check your package's documentation.
+
+<Note>
+  The bitbridge is not compatible with Wine's WoW64 build mode. If your Wine installation does not ship a `wine64` binary, the bitbridge will likely not work.
+</Note>
+
+## Supported hosts
+
+yabridge has been tested under the following hosts using Wine Staging 9.21:
+
+| Host | VST2 | VST3 | CLAP |
+|------|------|------|------|
+| Bitwig Studio 5.3 | ✅ | ✅ | ✅ |
+| REAPER 7.12 | ✅ | ✅ | ✅ |
+| Carla 2.5.5 | ✅ | ✅ | — |
+| Qtractor 0.9.29 | ✅ | ⚠️ VST3 editor windows may not have the correct size | ⚠️ May not support every CLAP plugin |
+| Renoise 3.4.3 | ✅ | ✅ | — |
+| Waveform 12.1.3 | ✅ | ✅ | — |
+| Ardour 8.1 | ✅ | ⚠️ Some plugins may cause Ardour 7.3–8.1 to freeze | — |
+| Mixbus 7.0.140 | ✅ | ✅ | — |
+
+<Warning>
+  yabridge does not work with Flatpak packages of DAWs. Use native packages (.deb, .rpm, AUR, etc.) instead.
+</Warning>
+
+## Architecture overview
+
+yabridge consists of two main components:
+
+- **Linux plugin library** (`libyabridge-{vst2,vst3,clap}.so`) — loaded by your DAW as a native plugin. It communicates with the Wine host over Unix domain sockets and exchanges audio data via shared memory buffers.
+- **Wine plugin host** (`yabridge-host.exe`) — a Winelib application that loads and runs the actual Windows plugin `.dll` or `.vst3` bundle inside Wine.
+
+This split design means your DAW never interacts with Wine directly. All communication is asynchronous and concurrent, keeping audio processing on its own thread separate from GUI and event handling.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install yabridge and yabridgectl on your Linux distribution.
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Add your plugin directories and get your first Windows plugin running.
+  </Card>
+</CardGroup>

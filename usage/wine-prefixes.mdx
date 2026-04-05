@@ -1,0 +1,55 @@
+---
+title: "Wine Prefixes"
+description: "How yabridge detects and uses Wine prefixes, how to work with multiple prefixes simultaneously, and the environment variables available to customize Wine behavior."
+---
+
+## Automatic Wine prefix detection
+
+Yabridge automatically detects and uses the Wine prefix that a Windows plugin's `.dll`, `.vst3`, or `.clap` file is located in. This means that if you have installed plugins into multiple Wine prefixes, yabridge will use the correct prefix for each plugin with no extra configuration needed.
+
+## Using multiple Wine prefixes simultaneously
+
+Because detection is based on the location of the plugin file, you can use plugins from different Wine prefixes at the same time. Just install your plugins into their respective prefixes, add those directories with `yabridgectl add`, and run `yabridgectl sync`. Yabridge will route each plugin to the right prefix automatically.
+
+## Overriding the Wine prefix
+
+If you need to force all yabridge plugins to use a specific Wine prefix, set the `WINEPREFIX` environment variable before launching your DAW:
+
+```bash
+export WINEPREFIX="/path/to/your/prefix"
+```
+
+<Warning>
+  Setting `WINEPREFIX` overrides automatic detection for **all** yabridge plugins. If you have plugins in multiple prefixes, make sure to unset this variable before starting your DAW so yabridge can detect each plugin's prefix correctly.
+</Warning>
+
+<Tip>
+  When testing a misbehaving plugin, try using a clean Wine prefix. Either temporarily rename `~/.wine` to something else, or point `WINEPREFIX` to an empty directory. Don't forget to unset `WINEPREFIX` before starting your DAW again or all plugins will use that prefix.
+</Tip>
+
+## Using a different Wine version
+
+If the `WINELOADER` environment variable is set, yabridge will use that binary to run Wine instead of whatever `wine` binary is on the system search path:
+
+```bash
+export WINELOADER="/path/to/custom/wine"
+```
+
+This is useful when you want to run plugins through a specific Wine build (for example, a build with fsync patches) without changing the system-wide Wine installation.
+
+### Bottles integration
+
+The [`yabridge-bottles-wineloader`](https://github.com/microfortnight/yabridge-bottles-wineloader) community project provides a `WINELOADER`-compatible wrapper that integrates yabridge with [Bottles](https://usebottles.com/), allowing you to use Wine environments managed by Bottles for your plugins.
+
+## Environment variable reference
+
+| Variable              | Description |
+| --------------------- | ----------- |
+| `WINEPREFIX`          | Override the Wine prefix used for all yabridge plugins. When unset, yabridge automatically detects the prefix from the plugin file's location. |
+| `WINELOADER`          | Path to the Wine binary yabridge should use to launch the plugin host. Falls back to the `wine` binary on `PATH` when unset. |
+| `YABRIDGE_NO_WATCHDOG` | Disable yabridge's watchdog timer. Required when using a `WINELOADER` that runs Wine under a separate namespace while the host is not sandboxed. |
+| `YABRIDGE_TEMP_DIR`   | Override the directory yabridge uses to store its sockets and other temporary files. Useful in combination with `YABRIDGE_NO_WATCHDOG` for sandboxed setups. |
+
+<Note>
+  Environment variables set in a terminal only affect processes launched from that terminal. To have them picked up when you launch your DAW from a desktop environment, you need to set them in your **login shell's profile** (e.g., `~/.profile`, `~/.bash_profile`, or `~/.zprofile`). After editing those files, log out and log back in for the changes to take effect.
+</Note>

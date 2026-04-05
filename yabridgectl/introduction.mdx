@@ -1,0 +1,105 @@
+---
+title: "yabridgectl"
+description: "A companion utility for managing yabridge plugin directories and keeping your bridge setup up to date."
+---
+
+yabridgectl is an optional command-line utility that ships alongside yabridge. It manages your Windows plugin install locations and automates the process of setting up, updating, and verifying the yabridge bridge files for all your plugins at once.
+
+## How it relates to yabridge
+
+yabridge itself is the bridge — it makes Windows VST2, VST3, and CLAP plugins appear as native Linux plugins to your DAW. yabridgectl is the management layer on top: it tracks which plugin directories you care about, copies the right chainloader `.so` files into place, and runs post-installation checks to confirm everything will work correctly.
+
+They are distributed together (same binary archive or distro package), but are separate tools. You need yabridge to be installed for yabridgectl to be useful.
+
+## Installation
+
+yabridgectl is included with every yabridge release. How you get it depends on your distro:
+
+- **Arch / Manjaro** — install the [`yabridgectl`](https://archlinux.org/packages/multilib/x86_64/yabridgectl/) package from the official repositories.
+- **Fedora** — install from the [COPR](https://copr.fedorainfracloud.org/coprs/patrickl/wine-tkg/) repository.
+- **OpenSUSE** — available through [GeekosDAW](https://geekosdaw.tuxfamily.org/en/).
+- **NixOS** — available in the repositories.
+- **All other distros** — download the binary archive from the [releases page](https://github.com/robbert-vdh/yabridge/releases) and extract it to `~/.local/share`, so that `~/.local/share/yabridge/yabridgectl` exists. Then either run it by full path or add `~/.local/share/yabridge` to your `PATH`.
+
+## Where yabridgectl looks for yabridge files
+
+By default yabridgectl searches for yabridge's chainloader libraries (`libyabridge-chainloader-{clap,vst2,vst3}.so`) in these locations, in order:
+
+1. `~/.local/share/yabridge` — the standard location when using the prebuilt binary archive
+2. `/usr/lib` — used by most distro packages
+3. `/usr/local/lib` — used by some distro packages and manual installs
+
+You can override this with `yabridgectl set --path=<directory>` if your install is somewhere else, or revert to auto-detection with `yabridgectl set --path-auto`.
+
+## Configuration
+
+yabridgectl stores its settings in a TOML file at `$XDG_CONFIG_HOME/yabridgectl/config.toml` (typically `~/.config/yabridgectl/config.toml`). This file is managed automatically — you should not need to edit it by hand. It records:
+
+- The list of plugin directories you have added
+- A custom yabridge path, if set
+- The VST2 installation location preference
+- Whether post-installation checks should always be skipped
+
+## Typical workflow
+
+The day-to-day usage of yabridgectl follows three steps:
+
+<Steps>
+  <Step title="Add your plugin directories">
+    Tell yabridgectl where your Windows plugins are installed inside your Wine prefix.
+
+    ```bash
+    # VST2 plugins (most common location)
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins"
+
+    # VST3 plugins
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
+
+    # CLAP plugins
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/CLAP"
+    ```
+  </Step>
+  <Step title="Run sync">
+    Set up or update the bridge files for every plugin in every managed directory.
+
+    ```bash
+    yabridgectl sync
+    ```
+
+    After syncing, bridged plugins appear in `~/.vst/yabridge`, `~/.vst3/yabridge`, and `~/.clap/yabridge`. Make sure your DAW scans those paths.
+  </Step>
+  <Step title="Rescan in your DAW">
+    Trigger a plugin rescan in your DAW so it picks up any newly bridged or updated plugins. The exact menu option varies by DAW.
+  </Step>
+</Steps>
+
+Whenever you install a new Windows plugin, install it into Wine as usual and then run `yabridgectl sync` again — no need to re-add directories.
+
+## The status command
+
+`yabridgectl status` gives you a snapshot of the current configuration and the installation state of every plugin yabridgectl knows about:
+
+```bash
+yabridgectl status
+```
+
+The output includes:
+
+- The detected (or configured) yabridge installation path
+- The VST2 installation location setting
+- Whether post-installation checks are disabled globally
+- Every managed plugin directory, with each plugin listed and its bridge status (set up, needs update, missing chainloader, etc.)
+
+This is a good first command to run when troubleshooting — it surfaces most misconfiguration without changing anything.
+
+## Version compatibility checks
+
+When you run `yabridgectl sync` after updating Wine or yabridge, yabridgectl automatically performs compatibility checks. It verifies that the installed Wine version is recent enough to run the yabridge host process, and warns you if something looks wrong. These checks run at the end of a normal sync; you can skip them with `--no-verify` if needed.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="/yabridgectl/commands">
+    Full documentation for every yabridgectl command, flag, and option.
+  </Card>
+</CardGroup>

@@ -1,0 +1,53 @@
+---
+title: "Drag and Drop"
+description: "How yabridge handles bidirectional drag-and-drop between Wine plugins and native Linux applications, and how to configure it for REAPER and Carla."
+---
+
+Yabridge supports drag-and-drop in both directions:
+
+- **From a native (X11) Linux application to a plugin** running under yabridge — for example, dragging a sample file from your file browser into a plugin's interface.
+- **From a yabridge plugin to a native X11 application** — for example, dragging a preset or audio file from a plugin back to your DAW or file browser.
+
+## Expected behavior when dragging from a plugin
+
+When dragging something from a plugin to your DAW, it may look like the drop is going to fail while you are still holding down the left mouse button. **This is expected behavior.** Yabridge's drag-and-drop system and Wine's own OLE drag-and-drop system are active at the same time, which causes this visual discrepancy. Release the mouse button over your intended drop target and the file will be dropped correctly.
+
+<Note>
+  Yabridge implements drag-and-drop from plugins to native applications by listening for Wine's OLE drag-and-drop tracker window and translating those events into native X11 drag-and-drop actions.
+</Note>
+
+## REAPER and Carla
+
+In **REAPER** and **Carla**, you may need to enable a compatibility option to prevent the host from intercepting the drop before it reaches your plugin.
+
+### REAPER
+
+REAPER's FX window supports drag-and-drop itself, which means files dragged onto a plugin editor will be intercepted by the FX window before they reach the plugin. To work around this, enable the `editor_force_dnd` compatibility option for the affected plugin:
+
+```toml
+# ~/.vst/yabridge/yabridge.toml  (or the relevant format's config file)
+
+["sforzando VST_x64.so"]
+editor_force_dnd = true
+```
+
+Setting `editor_force_dnd = true` strips drag-and-drop support from REAPER's FX window for that plugin, allowing files to be dragged directly onto the plugin editor.
+
+<Warning>
+  Enabling `editor_force_dnd` removes drag-and-drop support from the REAPER FX window itself for the matched plugins. Only enable it for plugins where this is necessary.
+</Warning>
+
+### Carla
+
+Similarly, if you are using yabridge in Carla and drag-and-drop is being intercepted, you may need to enable the same `editor_force_dnd` option.
+
+See the [compatibility options](/configuration/compatibility-options) page for the full reference on `editor_force_dnd` and other available options.
+
+## Tips for common DAWs
+
+| DAW | Notes |
+| --- | ----- |
+| **REAPER** | Use `editor_force_dnd = true` to prevent the FX window from stealing drops. |
+| **Carla** | May require `editor_force_dnd = true` depending on the setup. |
+| **Bitwig Studio** | Drag-and-drop works out of the box in both directions. |
+| **Other DAWs** | Generally works without additional configuration. |

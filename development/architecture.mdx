@@ -1,0 +1,221 @@
+---
+title: "Architecture"
+description: "An in-depth look at how yabridge works internally: components, IPC, editor embedding, plugin format bridging, and audio buffers."
+---
+
+## Overview
+
+Yabridge consists of multiple components that work together to bridge Windows plugins into a Linux plugin host:
+
+| Component | Description |
+| --- | --- |
+| **Native plugin libraries** | `libyabridge-{vst2,vst3,clap}.so` — loaded by the Linux DAW |
+| **Chainloader stubs** | Compact, dependency-free shims that load the main plugin library and forward entry-point calls |
+| **Wine host executables** | `yabridge-host.exe` (64-bit) and `yabridge-host-32.exe` (32-bit bitbridge) — run Windows plugins under Wine |
+
+---
+
+## General architecture
+
+When a Linux DAW loads a yabridge plugin, the following sequence occurs:
+
+<Steps>
+  <Step title="Chainloader is loaded">
+    The DAW loads a chainloader stub (e.g. `libyabridge-chainloader-vst2.so`). This is a compact, dependency-free shim that `dlopen()`s the main yabridge plugin library and forwards calls to the plugin API entry point functions.
+  </Step>
+  <Step title="Main library locates the Windows plugin">
+    The main yabridge library (`libyabridge-vst2.so`, etc.) reads `yabridge.toml` configuration files to find the corresponding Windows plugin `.dll`, `.vst3`, or `.clap` file.
+  </Step>
+  <Step title="Wine host process is started">
+    Yabridge spawns a Wine process running the appropriate host executable (`yabridge-host.exe` or `yabridge-host-32.exe`). If the plugin is configured to use a [plugin group](/configuration/plugin-groups), yabridge instead connects to an existing group host process and asks it to host the plugin within that process.
+  </Step>
+  <Step title="Communication is established">
+    Unix domain sockets are set up between the native plugin and the Wine host, and the Windows plugin is initialized inside Wine.
+  </Step>
+</Steps>
+
+### Why chainloaders?
+
+Chainloader libraries are intentionally kept compact and dependency-free. This design has two key benefits:
+
+- **In-place updates:** The main plugin library can be updated (e.g. via a distro package soname rebuild) without needing to replace all existing chainloader copies. `yabridgectl sync` is not required just to pick up a new library version.
+- **Shared library instance:** Because all chainloaders `dlopen()` the same main library path, multiple plugins loaded into a single DAW process share one instance of the yabridge library. This improves the L1 instruction cache hit rate when many yabridge plugins are in use simultaneously.
+
+---
+
+## Communication
+
+Once a Wine host process is running and hosting a Windows plugin, all communication between the native plugin library and the Wine host happens over **Unix domain sockets**.
+
+### Serialization
+
+Function call arguments and return values are serialized into structs using [bitsery](https://github.com/fraillt/bitsery), a fast binary serialization library. On the receiving end, a thread waits for data on the socket, deserializes the payload, invokes the corresponding function, and sends the result back over the same socket.
+
+### Handling mutual recursion with `AdHocSocketHandler`
+
+Because socket reads and writes are necessarily blocking, a single socket can only handle one function call at a time. This creates a problem with mutually recursive call sequences — for example, opening or resizing an editor may cause the plugin to call back into the host before the original call has returned.
+
+To handle this, certain sockets use the `AdHocSocketHandler` pattern: a background thread asynchronously accepts new connections on the socket endpoint. When a call arrives on a socket whose mutex is already locked, yabridge makes a **new connection** on the same endpoint and sends the payload over that new socket. This spawns a fresh handler thread on the receiving side to process the nested call.
+
+<Note>
+  `AdHocSocketHandler` and all classes derived from it are the canonical place to look for details on this mechanism in the source code.
+</Note>
+
+### Win32 message loop and main-thread dispatch
+
+On the Wine host side, anything that interacts with the Win32 message loop or the GUI **must** be called from the main thread. Yabridge designates the main thread for this purpose. It runs an Asio timer that periodically processes Win32 events (and X11 events when editors are open). "Unsafe" functions likely to touch the GUI are posted as tasks to the Asio IO context so they always execute on this main thread.
+
+On the native Linux side, a similar approach is used for functions that must be called from the GUI thread in certain hosts:
+
+- `audioMasterSizeWindow()` for VST2 plugins
+- `IPlugFrame::resizeView()` and `IContextMenu::popup()` for VST3 plugins
+
+### Mutually recursive + single-threaded calls
+
+Some situations combine both constraints (mutual recursion **and** main-thread-only execution). In these cases, the call must be dispatched on a new thread so the calling thread remains free to process incoming tasks through a separate IO context. See `Vst3HostBridge::send_mutually_recursive_message()` and `Vst3Bridge::send_mutually_recursive_message()` for the full implementation.
+
+---
+
+## Editor embedding
+
+All editor embedding logic lives in `src/wine-host/editor.h`. To embed a Windows plugin's editor into an X11 window provided by the Linux DAW, yabridge uses a three-layer window hierarchy:
+
+```
+DAW window (host-provided X11 window)
+  └── X11 wrapper window (created by yabridge)
+        └── Wine window (the actual Windows plugin editor)
+```
+
+The intermediate **wrapper window** prevents the host from accidentally subscribing to `SubStructureNotify` events and intercepting the `ConfigureNotify` events yabridge sends to the Wine window.
+
+### Two embedding modes
+
+<Tabs>
+  <Tab title="Reparenting (default)">
+    The Wine window is reparented into the host window. Yabridge then manually synthesizes and sends X11 `ConfigureNotify` events to the Wine window whenever its on-screen position or size changes.
+
+    This is necessary because Wine interprets the window's `(0, 0)` relative coordinates as **absolute screen coordinates**. Without the synthesized events, many Windows plugins will render their controls in the wrong position or have broken knobs and sliders. Sending the event (rather than actually reconfiguring the window) makes Wine believe the window is at its real screen position, so user interaction works correctly.
+  </Tab>
+  <Tab title="XEmbed">
+    Wine's own XEmbed implementation can be enabled on a per-plugin basis via the `editor_xembed = true` option in `yabridge.toml`.
+
+    XEmbed is the standard protocol for embedding one application's window into another, but Wine's implementation has quirks: some plugins flicker (particularly those using VSTGUI), and editor resizing may not work correctly in all hosts. The reparenting approach is therefore the default.
+  </Tab>
+</Tabs>
+
+### Keyboard focus management
+
+Yabridge cannot know when a Windows plugin wants keyboard focus, so it manages focus automatically:
+
+- **Mouse enter:** When the mouse enters the editor window while it is active, yabridge grabs keyboard focus by focusing the **parent window** passed by the host. This lets hosts like Bitwig Studio continue to process global keybindings (e.g. `Space` for play/pause) even while a plugin editor is open.
+- **Mouse leave:** When the mouse leaves the editor window, focus is returned to the host's window.
+- **Direct focus:** Holding `Shift` while entering the editor overrides this behavior and focuses the Wine window directly, allowing full keyboard input to reach the plugin (useful for typing spaces in Bitwig, or interacting with Voxengo settings dialogs).
+
+### Drag-and-drop (Wine → X11)
+
+Wine-to-X11 drag-and-drop is implemented in `src/wine-host/xdnd-proxy.{h,cpp}`. When a Windows plugin initiates a drag operation using Wine's OLE drag-and-drop system, Wine creates a tracker window that holds the `IDataSource` for the dragged data. Yabridge listens for this tracker window, reads the drag payload, and sets up an XDND operation with the same data so the drop can be received by native Linux applications like the DAW or a file browser.
+
+---
+
+## VST2 plugins
+
+When a VST2 plugin is initialized, the Wine host sends the plugin's `AEffect` struct to the native plugin library over a control socket. Yabridge also sends the active `yabridge.toml` configuration to the Wine host. After initialization, four dedicated sockets handle different categories of calls:
+
+| Socket | Purpose |
+| --- | --- |
+| **Dispatcher socket** | Host → plugin `dispatcher()` calls. Uses `AdHocSocketHandler` for mutual recursion. Payload is serialized via `*DataConverter` classes keyed on the opcode. |
+| **audioMaster socket** | Plugin → host `audioMaster()` callbacks. Same approach as dispatcher, but reversed. |
+| **Parameters socket** | `getParameter()` / `setParameter()` calls. |
+| **Audio socket** | `processReplacing()` / `processDoubleReplacing()` calls. See [Audio buffers](#audio-buffers). |
+
+<Note>
+  The legacy `process()` function is never used. Yabridge emulates it in terms of `processReplacing()` by summing the results into the existing output buffers.
+</Note>
+
+---
+
+## VST3 plugins
+
+VST3 is architecturally very different from VST2. A VST3 plugin is a **module** that exposes a plugin factory. The factory creates class instances — typically one or more `IComponent` (audio processor) instances and matching `IEditController` instances. Because a single VST3 module can provide multiple processors, **all instances of a single VST3 plugin must be hosted in a single Wine process**.
+
+### COM-based interface proxying
+
+VST3 objects implement the Microsoft COM `FUnknown` interface with reference counting and `QueryInterface`. An object can implement any number of VST3 interfaces, which makes proxying more complex than VST2.
+
+Yabridge's approach:
+
+<Steps>
+  <Step title="Factory proxy">
+    When the host requests the plugin factory, yabridge fetches a copy from the Wine host and returns a **proxy factory** object to the DAW.
+  </Step>
+  <Step title="Object proxies">
+    When the host asks the factory to instantiate a class, yabridge creates the real object inside Wine and builds a **proxy object** on the native side that implements exactly the same VST3 interfaces as the original. Each proxy object gets a unique identifier used to route function calls to the correct Wine-side object.
+  </Step>
+  <Step title="Interface wrappers: `YaFoo` and `Vst3*Proxy`">
+    Interface support is implemented via monolithic `Vst3*Proxy` classes (e.g. `Vst3PluginProxy`, `Vst3PlugViewProxy`, `Vst3PlugFrameProxy`). Each inherits from a set of `YaFoo` classes — wrappers around the corresponding `IFoo` VST3 interface — that carry the message structs for serializing function calls and a flag indicating whether the underlying object actually supports that interface.
+  </Step>
+  <Step title="Type-safe message dispatch">
+    Each function call is represented by a dedicated request struct and a typed response. Using `std::variant` and C++20 templated lambdas, the dispatch system is fully type-safe while still producing readable error messages.
+  </Step>
+</Steps>
+
+<Note>
+  The full list of proxy classes and the interfaces they implement is documented in [`src/common/serialization/vst3/README.md`](https://github.com/robbert-vdh/yabridge/blob/master/src/common/serialization/vst3/README.md). The proxy hierarchy goes at most three levels deep: `Vst3PluginProxy` → `Vst3PlugViewProxy` → `Vst3PlugFrameProxy`.
+</Note>
+
+### Communication channels
+
+VST3 communication uses three types of channels, all capable of spawning additional sockets and threads via `AdHocSocketHandler`:
+
+- One channel for host → plugin function calls
+- One channel for plugin → host callbacks
+- One additional channel **per audio processor instance** (for performance)
+
+---
+
+## CLAP plugins
+
+CLAP bridging follows the same fundamental approach as VST3 — yabridge creates plugin and host proxy objects that expose the same extensions as the objects they proxy.
+
+Key differences from VST3:
+
+- **Stricter thread requirements:** CLAP documents thread safety requirements for every function call, and yabridge enforces them more rigorously than it does for VST3.
+- **Per-instance audio thread socket:** Each plugin instance gets a dedicated audio thread callback socket for the handful of CLAP interfaces that use audio thread callbacks.
+
+---
+
+## Audio buffers
+
+Since yabridge 3.4.0, audio processing uses a **hybrid approach** combining shared memory with the socket-based message passing system.
+
+### Why shared memory for audio?
+
+Sockets are used everywhere else in yabridge for their flexibility (any message type, concurrent message handling), but serializing audio buffers over a socket always requires copying data. Audio buffers are large and have a **known maximum size** before processing begins, making them ideal for shared memory.
+
+### How it works
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Shared memory block (AudioShmBuffer)               │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  Audio sample data (input + output channels) │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+                         +
+┌──────────────────────────────────┐
+│  Socket message                  │
+│  (metadata: block size, timing,  │
+│   transport info, etc.)          │
+└──────────────────────────────────┘
+```
+
+- **Audio data** (large, fixed-size) is stored in a shared memory region (`AudioShmBuffer`).
+- **Metadata** (block size, transport position, etc.) travels over the existing socket.
+- The socket doubles as **synchronization** — no additional inter-process locking is needed.
+
+### Setup timing
+
+| Plugin format | Shared memory configured during |
+| --- | --- |
+| VST2 | `effMainsChanged` (yabridge also tracks the max block size and sample size from earlier host calls, since this info is not passed along with `effMainsChanged`) |
+| VST3 | `IAudioProcessor::setActive()` |

@@ -1,23 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "yabridge",
+  "projectType": "cli-tool",
+  "projectName": "yabridge",
+  "projectDescription": "A modern and transparent Wine plugin bridge that lets you use Windows VST2, VST3, and CLAP plugins natively in Linux DAWs.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#94cb04",
-    "light": "#545454"
-  },
-  "favicon": "https://media.brand.dev/288cc7c4-5cef-4376-950b-bdf0083eedae.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/robbert-vdh/yabridge"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/robbert-vdh/yabridge"
-    }
-  },
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -79,5 +67,25 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Seamless bridging of Windows VST2, VST3, and CLAP plugins on Linux via Wine",
+    "32-bit and 64-bit plugin support via bitbridge",
+    "Plugin groups for inter-plugin communication and faster startup",
+    "Drag-and-drop support between Wine plugins and native X11 applications",
+    "Per-plugin configuration via yabridge.toml with glob pattern matching",
+    "Transparent Wine prefix auto-detection for multi-prefix setups",
+    "Shared memory audio buffers for low-latency audio processing",
+    "yabridgectl companion utility for easy plugin management and sync"
+  ],
+  "publicApiSurface": [
+    "yabridgectl add <path>",
+    "yabridgectl rm <path>",
+    "yabridgectl list",
+    "yabridgectl status",
+    "yabridgectl sync [--prune] [--force] [--no-verify] [--verbose]",
+    "yabridgectl set [--path=<path>] [--path-auto] [--vst2-location=<loc>] [--no-verify=<bool>]",
+    "yabridgectl blacklist add|rm|list|clear",
+    "yabridge.toml: group, disable_pipes, editor_coordinate_hack, editor_disable_host_scaling, editor_force_dnd, editor_xembed, frame_rate, hide_daw, vst3_prefer_32bit"
+  ]
 }

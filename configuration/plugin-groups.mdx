@@ -1,0 +1,73 @@
+---
+title: "Plugin Groups"
+description: "Host multiple plugins in a single process to enable inter-plugin communication and reduce loading times."
+---
+
+Plugin groups let you run multiple plugins inside a single Wine process. This is required for inter-plugin communication and can also meaningfully reduce startup times.
+
+## Why use plugin groups
+
+Some plugins can communicate with other instances of themselves, or with other plugins from the same manufacturer. This is commonly used in mixing plugins to let different tracks reference each other without routing audio between them. For this to work, all participating instances must run in the **same process**.
+
+Examples of plugins that require this:
+
+- **FabFilter Pro-Q 3** — shares EQ curves between instances
+- **MMultiAnalyzer** — shows all instances in a single analyzer window
+- **iZotope mixing plugins** — Neutron, Relay, and others communicate across tracks
+
+Without plugin groups, yabridge hosts each VST2 plugin instance in its own separate process, so these features will not work.
+
+<Note>
+VST3 and CLAP plugins always run multiple instances in a single process by design, regardless of whether plugin groups are configured. The only benefit of enabling plugin groups for VST3 or CLAP plugins is slightly faster loading times the first time a new plugin is loaded.
+</Note>
+
+## How to configure
+
+Set the `group` option in your `yabridge.toml` to a string name. All plugins assigned the same group name are hosted in a single shared process.
+
+<ParamField path="group" type="string" default='""'>
+  The name of the plugin group this plugin belongs to. All plugins sharing the same group name run in a single process. Set to an empty string (the default) to host the plugin individually.
+</ParamField>
+
+```toml
+# ~/.vst/yabridge/yabridge.toml
+
+["FabFilter Pro-Q 3.so"]
+group = "fabfilter"
+
+["iZotope*/Neutron *"]
+group = "izotope"
+
+["iZotope7/Insight 2.so"]
+group = "izotope"
+```
+
+Any plugin whose path matches the glob pattern is added to the named group. You can use glob patterns to match multiple plugins at once, or add them one by one — both approaches work.
+
+## Group isolation
+
+Groups are scoped by Wine prefix and architecture. Two plugins with the same group name but in different Wine prefixes, or compiled for different CPU architectures (32-bit vs 64-bit), run in separate processes even if the group names match.
+
+## Performance trade-offs
+
+Putting all plugins into a single group with `["*"]` is the most aggressive option and can dramatically reduce loading times:
+
+```toml
+# Host every plugin in one process for maximum startup speed
+["*"]
+group = "all"
+```
+
+<Warning>
+When plugins share a process, they are no longer sandboxed from each other. A crash in one plugin will bring down all other plugins in the same group. Use groups selectively for plugins that actually need to communicate, or accept the risk when optimizing for load time.
+</Warning>
+
+## Xorg client limit workaround
+
+Each yabridge plugin process opens an Xorg client connection. If you load many plugins, you may hit Xorg's default limit of 256 clients, at which point no new plugins or Wine applications can be opened.
+
+Using plugin groups reduces the number of processes — and therefore the number of Xorg client connections — by hosting multiple plugins together. If you use many instances of the same VST2 plugin, switching to the VST3 or CLAP version also helps, since those always share a single process.
+
+<Tip>
+You can check whether you're hitting the Xorg client limit by running `wine cmd.exe` in a terminal. If it prints a message about the maximum number of clients being reached, plugin groups are one of the most straightforward ways to stay under the limit.
+</Tip>

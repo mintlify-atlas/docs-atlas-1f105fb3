@@ -1,0 +1,162 @@
+---
+title: "Compatibility Options"
+description: "Per-plugin workarounds for known issues with specific hosts and plugins."
+---
+
+Yabridge provides a set of compatibility options to work around issues with specific plugins and DAW hosts. Set these in your `yabridge.toml` file. All options default to `false` or their documented default unless otherwise noted.
+
+For a list of specific plugins that require these options, see the [known issues](/troubleshooting/known-issues) page.
+
+## All options
+
+| Option | Values | Default |
+| ------ | ------ | ------- |
+| `disable_pipes` | `true`, `false`, or an absolute path string | `false` |
+| `editor_coordinate_hack` | `true`, `false` | `false` |
+| `editor_disable_host_scaling` | `true`, `false` | `false` |
+| `editor_force_dnd` | `true`, `false` | `false` |
+| `editor_xembed` | `true`, `false` | `false` |
+| `frame_rate` | number | `60` |
+| `hide_daw` | `true`, `false` | `false` |
+| `vst3_prefer_32bit` | `true`, `false` | `false` |
+
+---
+
+## Option reference
+
+<ParamField path="disable_pipes" type="boolean | string" default="false">
+  When enabled, yabridge redirects the Wine plugin host's output streams to a log file instead of the terminal. This fixes a `JS_EXEC_FAILED` error that occurs with **ujam** plugins and other plugins built on the Gorilla Engine (such as the **LoopCloud** plugins).
+
+  Set to `true` to write output to `$XDG_RUNTIME_DIR/yabridge-plugin-output.log`, or set to an absolute file path to write to a specific location. Tildes (`~`) and environment variables are not expanded in the path.
+</ParamField>
+
+```toml
+["Loopcloud*"]
+disable_pipes = true
+
+# Or write to a specific file
+["Loopcloud*"]
+disable_pipes = "/tmp/loopcloud-output.log"
+```
+
+---
+
+<ParamField path="editor_coordinate_hack" type="boolean" default="false">
+  Enables a workaround for plugins that use absolute screen coordinates to determine where to draw their GUI. Because yabridge embeds the Wine window inside a window provided by the DAW, those coordinates do not match, causing the plugin to render in the wrong location.
+
+  Currently known affected plugins: **PSPaudioware E27** and **Soundtoys Crystallizer**.
+</ParamField>
+
+```toml
+["PSPaudioware"]
+editor_coordinate_hack = true
+```
+
+---
+
+<ParamField path="editor_disable_host_scaling" type="boolean" default="false">
+  Disables host-driven HiDPI scaling for VST3 and CLAP plugins. Wine does not have proper fractional HiDPI support, so this option may be necessary on HiDPI displays.
+
+  In most cases, setting the font DPI in **winecfg**'s graphics tab to `192` will cause plugins to render correctly at 200% size when this option is enabled.
+</ParamField>
+
+```toml
+["FabFilter*.vst3"]
+editor_disable_host_scaling = true
+
+# Apply to all VST3 plugins as a fallback
+["*"]
+editor_disable_host_scaling = true
+```
+
+---
+
+<ParamField path="editor_force_dnd" type="boolean" default="false">
+  Forces drag-and-drop support in **REAPER**. By default, REAPER's FX window intercepts drag-and-drop events before they reach the plugin editor, making it impossible to drag files onto plugins. Enabling this option strips drag-and-drop support from the FX window, allowing files to be dropped onto the plugin instead.
+</ParamField>
+
+```toml
+["sforzando VST_x64.so"]
+editor_force_dnd = true
+```
+
+---
+
+<ParamField path="editor_xembed" type="boolean" default="false">
+  Use Wine's XEmbed implementation instead of yabridge's normal window embedding method.
+
+  Some plugins have redrawing issues with the default embedding, and this option can help in certain setups. However, XEmbed has its own drawbacks: some plugins will have redrawing issues when using it, and editor resizing may not always work correctly. You may also need to apply [this Wine patch](https://github.com/psycha0s/airwave/blob/master/fix-xembed-wine-windows.patch) if you get blank editor windows.
+</ParamField>
+
+```toml
+["Analog Lab 3.so"]
+editor_xembed = true
+```
+
+<Tip>
+The XEmbed option can also help with rendering issues on the **Cinnamon** desktop environment, though Wine's XEmbed implementation may introduce other rendering artifacts.
+</Tip>
+
+---
+
+<ParamField path="frame_rate" type="number" default="60">
+  Controls the rate (in Hz) at which Win32 events are processed, which is usually also the refresh rate of the plugin's editor GUI.
+
+  When multiple plugins share a [plugin group](/configuration/plugin-groups), they all share the same event loop. In that case, the last plugin to be loaded determines the frame rate for the entire group.
+</ParamField>
+
+```toml
+["sforzando VST_x64.so"]
+frame_rate = 24
+```
+
+---
+
+<ParamField path="hide_daw" type="boolean" default="false">
+  Prevents yabridge from reporting the actual DAW name to the plugin. This affects VST2, VST3, and CLAP plugins.
+
+  Useful when a plugin changes its behavior based on which DAW it detects, in a way that causes problems. For example, **Chromaphone 3** uses a different text entry method when it detects **Bitwig Studio**, which causes the plugin to crash on text input. Enabling `hide_daw` prevents Chromaphone from detecting Bitwig and avoids the crash.
+</ParamField>
+
+```toml
+["Chromaphone 3.so"]
+hide_daw = true
+
+# Works the same for VST3
+["Chromaphone 3.vst3"]
+hide_daw = true
+```
+
+---
+
+<ParamField path="vst3_prefer_32bit" type="boolean" default="false">
+  When both a 32-bit and a 64-bit version of a VST3 plugin are installed in the same `.vst3` bundle inside `~/.vst3/yabridge`, this option causes yabridge to load the 32-bit version instead of the 64-bit version.
+
+  This is rarely needed, but can be useful if a specific plugin only functions correctly under 32-bit Wine.
+</ParamField>
+
+```toml
+["*/*Spectral*.vst3"]
+vst3_prefer_32bit = true
+```
+
+<Warning>
+You likely won't need this option. Only enable it if you have a specific reason to prefer the 32-bit version of a plugin.
+</Warning>
+
+---
+
+## Combining options
+
+Multiple options can be set in the same section. All options in a matching section are applied together.
+
+```toml
+# ~/.vst/yabridge/yabridge.toml
+
+["sforzando VST_x64.so"]
+editor_force_dnd = true
+frame_rate = 24
+
+["PSPaudioware"]
+editor_coordinate_hack = true
+```

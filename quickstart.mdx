@@ -1,80 +1,133 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick start"
+description: "Install your Windows plugins and get them running in your Linux DAW in a few steps."
 ---
 
-## Get started in three steps
+This guide walks you through the complete workflow for setting up Windows plugins with yabridge, from installing Wine to scanning plugins in your DAW.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install Wine Staging">
+    yabridge requires a recent version of Wine Staging.
 
-### Step 1: Set up your local environment
+    On **Arch** and **Manjaro**:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    sudo pacman -S wine-staging
+    ```
 
-### Step 2: Deploy your changes
+    On **Debian**, **Ubuntu**, **Linux Mint**, and **Pop!\_OS**, install from the [WineHQ repositories](https://wiki.winehq.org/Download), as the versions in the distro repositories are often too old.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    On other distros, install `wine-staging` using your package manager.
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Install yabridge and yabridgectl">
+    Install yabridge and its companion utility yabridgectl. See the [installation guide](/installation) for full per-distro instructions.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    On **Arch** and **Manjaro**:
 
-### Step 3: Go live
+    ```bash
+    sudo pacman -S yabridge yabridgectl
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    On **Ubuntu**, **Debian**, and other distros, download the prebuilt binary archive from the [GitHub releases page](https://github.com/robbert-vdh/yabridge/releases) and extract it to `~/.local/share`:
 
-## Next steps
+    ```bash
+    tar -C ~/.local/share -xavf yabridge-x.y.z.tar.gz
+    ```
 
-Now that you have your docs running, explore these key features:
+    Then add yabridge to your `PATH`:
+
+    ```bash
+    echo 'export PATH="$PATH:$HOME/.local/share/yabridge"' >> ~/.bashrc
+    ```
+
+    Reopen your terminal after this step.
+  </Step>
+
+  <Step title="Install your Windows plugins in Wine">
+    Install your Windows VST2, VST3, and CLAP plugins the same way you would on Windows — by running the plugin installers through Wine. Most installers will install to the standard locations inside your Wine prefix automatically:
+
+    - **VST2**: `C:\Program Files\Steinberg\VstPlugins` (sometimes `VSTPlugins` or a directory directly under `Program Files`)
+    - **VST3**: `C:\Program Files\Common Files\VST3`
+    - **CLAP**: `C:\Program Files\Common Files\CLAP`
+
+    You do not need to do anything special — just run the installers and let them install to the default locations.
+  </Step>
+
+  <Step title="Add your plugin directories to yabridgectl">
+    Tell yabridgectl where your Windows plugins are installed. Use `yabridgectl add` with the path to each plugin directory inside your Wine prefix.
+
+    For the standard VST2 directory:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins"
+    ```
+
+    For the standard VST3 directory:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
+    ```
+
+    For the standard CLAP directory:
+
+    ```bash
+    yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/CLAP"
+    ```
+
+    <Note>
+      The VST2 directory may be capitalized as `VSTPlugins` on your system. Some plugins also install to a directory directly under `Program Files` rather than inside `Steinberg`. Add those directories separately with `yabridgectl add` if needed.
+    </Note>
+
+    You can see all currently managed directories at any time:
+
+    ```bash
+    yabridgectl list
+    ```
+  </Step>
+
+  <Step title="Run yabridgectl sync">
+    Run `yabridgectl sync` to set up yabridge for all plugins in your managed directories:
+
+    ```bash
+    yabridgectl sync
+    ```
+
+    This command creates the bridged plugin files in your Linux plugin directories:
+
+    - VST2 plugins → `~/.vst/yabridge`
+    - VST3 plugins → `~/.vst3/yabridge`
+    - CLAP plugins → `~/.clap/yabridge`
+
+    Re-run `yabridgectl sync` whenever you install or remove a Windows plugin to keep everything up to date.
+
+    <Tip>
+      Run `yabridgectl status` to get an overview of all managed plugin directories and the installation status of each plugin. This is useful for spotting plugins that need a sync or checking that everything is set up correctly.
+    </Tip>
+  </Step>
+
+  <Step title="Configure your DAW to scan the output directories">
+    Add the following directories to your DAW's plugin search paths:
+
+    - **VST2**: `~/.vst` (or the full path `$HOME/.vst`)
+    - **VST3**: `~/.vst3` (or the full path `$HOME/.vst3`)
+    - **CLAP**: `~/.clap` (or the full path `$HOME/.clap`)
+
+    Then trigger a plugin rescan in your DAW. Your Windows plugins should appear as native Linux plugins.
+
+    <Warning>
+      Make sure you are using native packages of your DAW (.deb, .rpm, AUR, etc.) and not a Flatpak. yabridge does not work with Flatpak DAWs.
+    </Warning>
+  </Step>
+</Steps>
+
+## What to do next
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Configuration" icon="sliders" href="/configuration/yabridge-toml">
+    Set per-plugin options like plugin groups, frame rate, and compatibility workarounds using `yabridge.toml`.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/common-issues">
+    Find solutions to common issues, plugin-specific fixes, and performance tuning tips.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

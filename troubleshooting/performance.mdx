@@ -1,0 +1,163 @@
+---
+title: "Performance Tuning"
+description: "Reduce latency spikes, DSP overhead, and CPU usage when running Windows plugins through yabridge."
+---
+
+Running Windows plugins under Wine should have a minimal performance overhead, but you may still notice an increase in latency spikes and overall DSP load. The steps below can eliminate most or all of these negative side effects.
+
+## Realtime scheduling
+
+The single most impactful thing you can do for stability is to ensure your system can run programs with realtime scheduling.
+
+<Note>
+  On Arch and Manjaro, realtime scheduling does **not** require a realtime kernel — their regular kernels already include the `PREEMPT` patch set.
+</Note>
+
+Verify that realtime scheduling is working:
+
+```shell
+chrt -f 10 whoami
+```
+
+This should print your username. Then check whether your kernel includes `PREEMPT`:
+
+```shell
+uname -a
+```
+
+The output should contain `PREEMPT` somewhere in the string.
+
+**If the output contains `PREEMPT_DYNAMIC` instead**, you need to check whether `CONFIG_PREEMPT` is actually set:
+
+```shell
+# On distros that expose /proc/config.gz:
+zgrep PREEMPT /proc/config.gz
+
+# On distros that store the config in /boot:
+grep PREEMPT "/boot/config-$(uname -r)"
+```
+
+If `CONFIG_PREEMPT` is not set, either add the `preempt=full` kernel parameter to your bootloader configuration, or switch to a kernel optimized for low latencies.
+
+## Interrupt priority with threadirqs
+
+Enable the `threadirqs` kernel parameter in your bootloader configuration. In some situations this can help eliminate xruns by allowing interrupt threads to be scheduled with realtime priority.
+
+After enabling `threadirqs`, use [rtirq](https://github.com/rncbc/rtirq#rtirq) to increase the scheduling priority of interrupts for your sound card.
+
+## CPU frequency governor
+
+Changing CPU clock speeds in the middle of a real-time workload causes latency spikes. Lock the CPU to the performance governor to prevent this.
+
+Since Linux 5.9 you can set the default governor via a kernel parameter — add the following to your bootloader's kernel command line:
+
+```
+cpufreq.default_governor=performance
+```
+
+<Tip>
+  This is preferable to setting the governor at runtime because it applies before any audio processing begins.
+</Tip>
+
+## Wine with fsync/FUTEX2
+
+Using a build of Wine compiled with Proton's fsync or FUTEX2 patches can significantly improve performance when using multithreaded plugins. This is often the most impactful single change you can make after realtime scheduling.
+
+**Requirements:**
+
+- Linux kernel 5.16 or newer (includes native `FUTEX_WAITV` support, which fsync uses via wine-tkg's default `customization.cfg`)
+- A Wine build with the fsync patches applied
+
+**On Arch and Manjaro**, use [Tk-Glitch's wine-tkg-git fork](https://github.com/Frogging-Family/wine-tkg-git):
+
+<Warning>
+  Do not use the prebuilt wine-tkg releases — they have `fshack` enabled, which breaks many plugins that use Direct3D for rendering. Build from source using the default profile instead.
+</Warning>
+
+**Enabling fsync:**
+
+Once you have a compatible Wine build and kernel, set the `WINEFSYNC` environment variable to `1`. See the [environment configuration](#environment-configuration) section below for where to set this so your DAW picks it up at launch.
+
+## Plugin format performance
+
+If you have the choice between multiple plugin formats, prefer them in this order:
+
+| Format | Notes |
+|--------|-------|
+| **CLAP** | Best performance |
+| **VST3** | Better than VST2; multiple instances always share a single process |
+| **VST2** | Use plugin groups for multi-instance performance |
+
+VST3 and CLAP plugins share a single process across multiple instances by design, which reduces overhead significantly compared to VST2.
+
+## Plugin groups for VST2 performance
+
+If a plugin doesn't have a VST3 or CLAP version, [plugin groups](/configuration/plugin-groups) can greatly improve performance when you're running many instances of the same VST2 plugin.
+
+Some plugins — like the BBC Spitfire plugins — share a large amount of resources between instances. Hosting all instances in a single process can dramatically reduce overall CPU usage and eliminate latency spikes.
+
+Configure plugin groups in your `yabridge.toml`:
+
+```toml
+# ~/.vst/yabridge/yabridge.toml
+
+["BBC Symphony Orchestra*"]
+group = "spitfire"
+```
+
+---
+
+## Environment configuration
+
+To set environment variables like `WINEFSYNC=1` so that your DAW picks them up when launched from a GUI (not a terminal), you need to modify your *login shell's* profile — not your interactive shell's configuration.
+
+<Warning>
+  Some display managers override your login shell and always use `/bin/sh`, so the correct file to edit depends on both your shell and your display manager. Run `echo $SHELL` to find your current login shell.
+</Warning>
+
+**GDM, LightDM, and LXDM** (used by GNOME, XFCE, LXDE) do not respect your login shell — they always use `/bin/sh`. In this case, regardless of which shell you normally use, add environment variables to `~/.profile`.
+
+<Tabs>
+  <Tab title="GDM / LightDM / LXDM">
+    Add to `~/.profile`:
+
+    ```shell
+    export WINEFSYNC=1
+    ```
+  </Tab>
+  <Tab title="Bash">
+    Add to `~/.bash_profile` (or `~/.profile` if `~/.bash_profile` does not exist):
+
+    ```shell
+    export WINEFSYNC=1
+    ```
+  </Tab>
+  <Tab title="Zsh">
+    Add to `~/.zprofile`:
+
+    ```shell
+    export WINEFSYNC=1
+    ```
+
+    <Note>
+      `~/.zshenv` should also work, but some distros (including Arch Linux) overwrite the environment after this file has been read, so `~/.zprofile` is more reliable.
+    </Note>
+  </Tab>
+  <Tab title="fish">
+    Add to `~/.config/fish/config.fish` or a file in `~/.config/fish/conf.d/`:
+
+    ```shell
+    set -gx WINEFSYNC 1
+    ```
+
+    If you also need to add a directory to your `PATH` (e.g. when using yabridge directly from a build directory):
+
+    ```shell
+    set -gp fish_user_paths ~/directory/with/yabridge/binaries
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  After editing any of these files, log out and log back in to ensure all applications pick up the new environment variables. Changes will not take effect for applications already running.
+</Warning>

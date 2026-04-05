@@ -1,0 +1,319 @@
+---
+title: "Commands Reference"
+description: "Complete reference for every yabridgectl command, subcommand, flag, and option."
+---
+
+All commands below can also be explored via `yabridgectl --help` or `yabridgectl <command> --help`.
+
+---
+
+## yabridgectl add
+
+Add a plugin install location to yabridgectl's managed list.
+
+```bash
+yabridgectl add <path>
+```
+
+The path must point to an existing directory. yabridgectl resolves symlinks and converts relative paths to absolute ones before saving. Once a directory is added, `yabridgectl sync` will search it for VST2 `.dll` files, VST3 modules, and CLAP plugins.
+
+**Arguments**
+
+<ParamField path="path" type="string" required>
+  Path to an existing directory containing Windows VST2, VST3, or CLAP plugins.
+  Must be a directory (not a file). Symlinks to directories are accepted.
+</ParamField>
+
+**Examples**
+
+```bash
+# Most common VST2 plugin directory in the default Wine prefix
+yabridgectl add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins"
+
+# VST3 plugins (always installed here under Windows)
+yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/VST3"
+
+# CLAP plugins
+yabridgectl add "$HOME/.wine/drive_c/Program Files/Common Files/CLAP"
+
+# A custom plugin directory in a named Wine prefix
+yabridgectl add "$HOME/.wine-daw/drive_c/Program Files/Steinberg/VstPlugins"
+```
+
+---
+
+## yabridgectl rm
+
+Remove a previously added plugin install location.
+
+```bash
+yabridgectl rm <path>
+```
+
+The path must be one that was previously added with `yabridgectl add`. After removing the directory from the managed list, yabridgectl will prompt you to decide whether to remove any leftover yabridge `.so` files that were placed there.
+
+**Arguments**
+
+<ParamField path="path" type="string" required>
+  Path to a previously added directory. Must match an entry in the managed list
+  exactly (or be resolvable to one via symlink or relative path normalization).
+</ParamField>
+
+**Examples**
+
+```bash
+yabridgectl rm "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins"
+```
+
+---
+
+## yabridgectl list
+
+List all currently managed plugin directories.
+
+```bash
+yabridgectl list
+```
+
+Prints one directory per line. No flags or arguments.
+
+**Examples**
+
+```bash
+yabridgectl list
+```
+
+---
+
+## yabridgectl status
+
+Show the current yabridgectl settings and the installation status for all plugins in every managed directory.
+
+```bash
+yabridgectl status
+```
+
+The output includes:
+
+- The detected or configured yabridge installation path
+- The VST2 installation location (`centralized` or `inline`)
+- Whether post-installation setup checks are globally disabled
+- Each managed plugin directory with the bridge status of every plugin found inside it
+
+No flags or arguments. This is a read-only command — it does not modify any files.
+
+**Examples**
+
+```bash
+yabridgectl status
+```
+
+---
+
+## yabridgectl sync
+
+Set up or update yabridge for all plugins found in every managed directory.
+
+```bash
+yabridgectl sync [OPTIONS]
+```
+
+For each plugin found, yabridgectl copies the appropriate chainloader `.so` file (`libyabridge-chainloader-{clap,vst2,vst3}.so`) into place. VST2 plugins are set up in `~/.vst/yabridge`, VST3 plugins in `~/.vst3/yabridge`, and CLAP plugins in `~/.clap/yabridge`.
+
+After syncing, yabridgectl warns about any unrelated `.so` files that may have been left behind after uninstalling a plugin. Pass `--prune` to delete them automatically.
+
+At the end of a successful sync, yabridgectl runs post-installation setup checks to verify Wine and yabridge are compatible. These checks are triggered automatically whenever Wine or yabridge has been updated.
+
+**Options**
+
+<ParamField query="--force" type="boolean">
+  Short form: `-f`
+
+  Always update (re-copy) bridge files, even if the destination is already up
+  to date. Useful after manually modifying files or when troubleshooting.
+</ParamField>
+
+<ParamField query="--no-verify" type="boolean">
+  Short form: `-n`
+
+  Skip the post-installation setup checks that run at the end of sync. Useful
+  if the checks are failing for a known harmless reason, or when running in a
+  scripted/automated context. Can also be set permanently with
+  `yabridgectl set --no-verify=true`.
+</ParamField>
+
+<ParamField query="--prune" type="boolean">
+  Short form: `-p`
+
+  Remove unrelated or leftover `.so` files found in the managed directories and
+  in the `~/{.clap,.vst,.vst3}/yabridge` output directories. These are typically
+  files left behind after uninstalling a Windows plugin.
+</ParamField>
+
+<ParamField query="--verbose" type="boolean">
+  Short form: `-v`
+
+  Print information about every plugin being set up or skipped, instead of only
+  showing a summary. Useful for confirming which plugins were detected and processed.
+</ParamField>
+
+**Examples**
+
+```bash
+# Standard sync — set up or update all plugins
+yabridgectl sync
+
+# Sync and remove leftover .so files from uninstalled plugins
+yabridgectl sync --prune
+
+# Force re-copy all bridge files even if already up to date
+yabridgectl sync --force
+
+# Sync with full per-plugin output and without running post-install checks
+yabridgectl sync --verbose --no-verify
+
+# Combined: force update, prune leftovers, show verbose output
+yabridgectl sync --force --prune --verbose
+```
+
+---
+
+## yabridgectl set
+
+Change persistent yabridgectl configuration settings.
+
+```bash
+yabridgectl set [OPTIONS]
+```
+
+At least one option must be provided. Settings are written to `$XDG_CONFIG_HOME/yabridgectl/config.toml`.
+
+**Options**
+
+<ParamField query="--path" type="string">
+  Set a custom directory containing yabridge's chainloader libraries
+  (`libyabridge-chainloader-{clap,vst2,vst3}.so`).
+
+  By default yabridgectl searches `~/.local/share/yabridge`, `/usr/lib`, and
+  `/usr/local/lib`. Use this option when yabridge is installed somewhere else.
+  Conflicts with `--path-auto`.
+</ParamField>
+
+<ParamField query="--path-auto" type="boolean">
+  Revert the yabridge path back to automatic detection, undoing a previous
+  `--path` override. Conflicts with `--path`.
+</ParamField>
+
+<ParamField query="--vst2-location" type="string">
+  Control where bridged VST2 plugins are set up. Accepted values:
+
+  - `centralized` *(default)* — VST2 bridge files are placed in `~/.vst/yabridge`, keeping them separate from the original plugin directory.
+  - `inline` — The yabridge `.so` file is placed alongside the original `.dll` file in the plugin's own directory. This is a legacy mode and is not recommended for new setups.
+</ParamField>
+
+<ParamField query="--no-verify" type="bool">
+  Permanently enable or disable the post-installation setup checks that normally
+  run at the end of `yabridgectl sync`. Accepts `true` or `false`.
+
+  This is a persistent setting. To skip checks only for a single sync run, use
+  `yabridgectl sync --no-verify` instead.
+</ParamField>
+
+**Examples**
+
+```bash
+# Point yabridgectl at a custom yabridge installation directory
+yabridgectl set --path="$HOME/.local/share/yabridge"
+
+# Revert to automatic yabridge path detection
+yabridgectl set --path-auto
+
+# Use the centralized VST2 layout (default)
+yabridgectl set --vst2-location=centralized
+
+# Permanently skip post-installation checks
+yabridgectl set --no-verify=true
+
+# Re-enable post-installation checks
+yabridgectl set --no-verify=false
+```
+
+---
+
+## yabridgectl blacklist
+
+Manage the indexing blacklist. Blacklisted paths are skipped during `yabridgectl sync`.
+
+```bash
+yabridgectl blacklist <subcommand>
+```
+
+<Note>
+  Most users will never need this feature. The blacklist exists for edge cases where yabridgectl incorrectly identifies a file or directory as a plugin, or where you want to intentionally exclude specific paths from being bridged.
+</Note>
+
+### blacklist add
+
+Add a file or directory to the blacklist.
+
+```bash
+yabridgectl blacklist add <path>
+```
+
+<ParamField path="path" type="string" required>
+  Path to an existing file or directory to exclude from indexing. The path must
+  exist on disk at the time it is added.
+</ParamField>
+
+```bash
+# Exclude a single .dll file
+yabridgectl blacklist add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins/helper.dll"
+
+# Exclude an entire subdirectory
+yabridgectl blacklist add "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins/SomePluginData"
+```
+
+### blacklist rm
+
+Remove a path from the blacklist.
+
+```bash
+yabridgectl blacklist rm <path>
+```
+
+<ParamField path="path" type="string" required>
+  Path to a previously blacklisted file or directory. Must match an existing
+  blacklist entry.
+</ParamField>
+
+```bash
+yabridgectl blacklist rm "$HOME/.wine/drive_c/Program Files/Steinberg/VstPlugins/helper.dll"
+```
+
+### blacklist list
+
+List all currently blacklisted paths.
+
+```bash
+yabridgectl blacklist list
+```
+
+Prints one path per line. No flags or arguments.
+
+```bash
+yabridgectl blacklist list
+```
+
+### blacklist clear
+
+Remove all entries from the blacklist at once.
+
+```bash
+yabridgectl blacklist clear
+```
+
+No flags or arguments. This cannot be undone — paths must be re-added individually if needed.
+
+```bash
+yabridgectl blacklist clear
+```

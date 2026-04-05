@@ -1,0 +1,210 @@
+---
+title: "Debugging"
+description: "How to read yabridge log output, test the Wine host directly, attach a debugger, and diagnose common problems."
+---
+
+## Reading log output
+
+The simplest first step when a plugin isn't working is to read yabridge's output. Both yabridge and yabridgectl try to diagnose many common issues automatically and print useful messages on startup.
+
+### Launching a DAW from the terminal
+
+Start your DAW from a terminal to see yabridge's output directly on `stderr`:
+
+```shell
+bitwig-studio
+# or
+reaper
+# or
+ardour8
+```
+
+On startup, yabridge prints:
+- The `yabridge.toml` file being used (if any)
+- Which section within that file was matched
+- All active configuration options for the plugin
+
+<Note>
+  **Bitwig Studio** routes plugin output to its own log file instead of stderr. Check `~/.BitwigStudio/log/engine.log` for yabridge messages when using Bitwig.
+</Note>
+
+### Debug environment variables
+
+Yabridge provides two environment variables to control logging verbosity:
+
+| Variable | Description |
+| --- | --- |
+| `YABRIDGE_DEBUG_FILE=<path>` | Write all yabridge debug output (and Wine/plugin stdout/stderr) to a file instead of stderr. |
+| `YABRIDGE_DEBUG_LEVEL={0,1,2}[+editor]` | Set verbosity. Append `+editor` for extra editor window debug output. |
+
+**Debug levels:**
+
+<AccordionGroup>
+  <Accordion title="Level 0 (default)">
+    Logs Wine process output and basic information about the environment, configuration, and plugin being loaded. Sufficient for most diagnostics.
+  </Accordion>
+  <Accordion title="Level 1">
+    Logs detailed information about most events and function calls exchanged between the native plugin and the Wine host. Noisy periodic events like `effEditIdle()` and `audioMasterGetTime()` are filtered out.
+  </Accordion>
+  <Accordion title="Level 2">
+    Logs **all** events without filtering. Very verbose, but essential for debugging plugin-specific protocol issues.
+  </Accordion>
+</AccordionGroup>
+
+**Example — write a debug log while running your DAW:**
+
+```shell
+env YABRIDGE_DEBUG_FILE=/tmp/yabridge.log YABRIDGE_DEBUG_LEVEL=1 bitwig-studio &
+tail -F /tmp/yabridge.log
+```
+
+More detail on the debug levels is available in `src/common/logging.h`.
+
+### Wine's own logging channels
+
+Wine's built-in [debug channels](https://wiki.winehq.org/Debug_Channels) can also help trace execution inside the Windows plugin. Particularly useful channels:
+
+```shell
+# Trace Win32 messages, module loading, and function relay
+WINEDEBUG=+message,+module,+relay bitwig-studio
+```
+
+---
+
+## Testing `yabridge-host.exe` directly
+
+You can verify that your Wine installation is working correctly by running the Wine host binary directly (do **not** prefix it with `wine` — it is a Winelib executable and invokes Wine itself):
+
+```shell
+~/.local/share/yabridge/yabridge-host.exe
+```
+
+### Expected output
+
+If everything is working, you should see Wine's startup messages followed by:
+
+```
+Usage: yabridge-host.exe <plugin_type> <plugin_location> <endpoint_base_directory>
+```
+
+### Error messages and what they mean
+
+<AccordionGroup>
+  <Accordion title="002b:err:module:__wine_process_init">
+    Your version of Wine is **too old** for this version of yabridge. Upgrade Wine (see the [WineHQ download page](https://wiki.winehq.org/Download) for instructions on Ubuntu/Debian).
+  </Accordion>
+  <Accordion title="0024:err:process:exec_process">
+    Your Wine prefix is configured as **32-bit only** and cannot run 64-bit executables like `yabridge-host.exe`. Either recreate the prefix without specifying `WINEARCH=win32`, or use a 64-bit prefix.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  `yabridgectl sync` also runs this check automatically and will warn you if the installed Wine version is incompatible with the current version of yabridge.
+</Tip>
+
+---
+
+## Attaching a debugger
+
+### Debugging the native Linux plugin
+
+The native plugin library (`libyabridge-vst2.so`, etc.) runs inside the DAW process. You can attach `gdb` to the DAW process normally:
+
+```shell
+gdb -p $(pgrep -f bitwig-studio)
+```
+
+### Debugging the Wine plugin host with winedbg
+
+Debugging `yabridge-host.exe` is more involved. Wine provides a GDB proxy through `winedbg`, but it requires extra setup. Yabridge includes a feature flag that automates this for KDE Plasma. Other desktop environments or window managers may need minor adjustments in `src/plugin/host-process.cpp`.
+
+<Steps>
+  <Step title="Enable the winedbg build option">
+    ```shell
+    meson configure build --buildtype=debug -Dwinedbg=true
+    ```
+  </Step>
+  <Step title="Rebuild yabridge">
+    ```shell
+    ninja -C build
+    ```
+  </Step>
+  <Step title="Load the plugin in your DAW">
+    When the plugin host starts, winedbg will launch in a separate terminal emulator and present a GDB prompt connected to the Wine process.
+  </Step>
+</Steps>
+
+<Warning>
+  winedbg can be finicky about its arguments and may not be fully reliable in all situations. For tracing function calls inside a plugin without a full debugger, consider using Wine's `+relay` debug channel first.
+</Warning>
+
+---
+
+## Common diagnostic steps
+
+Work through these steps in order when diagnosing a broken plugin:
+
+<Steps>
+  <Step title="Run yabridgectl sync">
+    ```shell
+    yabridgectl sync
+    ```
+    This checks for stale or broken plugin links, verifies Wine compatibility, and reports any issues it finds.
+  </Step>
+  <Step title="Read the terminal output">
+    Launch your DAW from a terminal (or check `~/.BitwigStudio/log/engine.log` for Bitwig) and look for error messages from yabridge or Wine.
+  </Step>
+  <Step title="Test yabridge-host.exe directly">
+    Run `~/.local/share/yabridge/yabridge-host.exe` and verify you get the usage line (see above). This confirms Wine is functional.
+  </Step>
+  <Step title="Use a clean Wine prefix">
+    Plugin issues are often caused by a misconfigured Wine prefix. Test with a fresh one:
+
+    ```shell
+    # Option 1: Temporarily rename the default prefix
+    mv ~/.wine ~/.wine.bak
+
+    # Option 2: Use a separate prefix for testing
+    export WINEPREFIX=~/.wine-test
+    ```
+
+    <Warning>
+      Remember to `unset WINEPREFIX` before starting your DAW if you set it temporarily, or **all** yabridge plugins will use that prefix.
+    </Warning>
+  </Step>
+  <Step title="Kill stale Wine processes">
+    Leftover Wine server processes from a previous crash can interfere with new plugin loads:
+
+    ```shell
+    # Kill Wine processes in the default/current prefix
+    wineserver -k
+    ```
+  </Step>
+  <Step title="Increase debug verbosity">
+    If the above steps don't reveal the problem, re-run with `YABRIDGE_DEBUG_LEVEL=1` or `YABRIDGE_DEBUG_LEVEL=2` to capture detailed function call traces.
+  </Step>
+</Steps>
+
+---
+
+## Roadmap
+
+Yabridge's VST2 and VST3 bridging are feature-complete. The following items are planned or under consideration for future releases:
+
+<AccordionGroup>
+  <Accordion title="Short term: ARA support for VST3">
+    [ARA (Audio Random Access)](https://www.celemony.com/en/service1/about-celemony/technologies) support for VST3 plugins. The [ARA SDK](https://github.com/Celemony/ARA_SDK) has been open-sourced, making this feasible to implement.
+  </Accordion>
+  <Accordion title="Longer term: yabridgectl update command">
+    An easier upgrade path for non-packaged installations via a new `yabridgectl update` command ([issue #51](https://github.com/robbert-vdh/yabridge/issues/51)).
+  </Accordion>
+  <Accordion title="Future: CLAP audio thread pool support">
+    CLAP defines an audio thread pool extension. Implementing it efficiently is non-trivial, and there are currently no plugins that can benefit from it.
+  </Accordion>
+  <Accordion title="Future: REAPER VST2.4 and VST3 vendor extensions">
+    REAPER defines vendor-specific extensions for both [VST2.4](https://www.reaper.fm/sdk/vst/vst_ext.php) and [VST3](https://github.com/justinfrankel/reaper-sdk/blob/main/sdk/reaper_vst3_interfaces.h).
+  </Accordion>
+  <Accordion title="Future: Presonus VST3 extensions">
+    [Presonus' VST3 interface extensions](https://presonussoftware.com/en_US/developer). These have largely been superseded by official VST3 SDK interfaces in later versions, so relatively few plugins still rely on them.
+  </Accordion>
+</AccordionGroup>
